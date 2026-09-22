@@ -1,0 +1,272 @@
+/* ===================================================================================
+   Modern glass UI - shared by index.html, publish.html and view.html.
+   Theming: a `data-theme="dark"|"light"` attribute on <html> (set by theme.js) drives
+   every color below through CSS variables, so both pages and both themes stay in sync.
+   =================================================================================== */
+:root{
+  --radius:16px; --radius-sm:10px; --radius-lg:22px;
+  --action:#7c9cff; --action-ink:#0c1024; --live:#ff4d6d; --ok:#2fd68a; --warn:#ffb545; --bad:#ff5a6a;
+  --blur:18px;
+  --dur:.22s;
+}
+:root[data-theme="dark"]{
+  --bg-0:#0a0c14; --bg-1:#12162a; --bg-2:#1a1030;
+  --ink:#eef1ff; --muted:#9aa3c4; --line:rgba(255,255,255,.10);
+  --glass:rgba(24,27,48,.55); --glass-strong:rgba(20,23,42,.78); --glass-soft:rgba(255,255,255,.05);
+  --field:rgba(255,255,255,.06); --field-line:rgba(255,255,255,.14);
+  --shadow:0 8px 32px rgba(0,0,0,.45);
+  --stage-bg-a:#1b1440; --stage-bg-b:#0a0c1c; --stage-bg-c:#2a1554;
+}
+:root[data-theme="light"]{
+  --bg-0:#eef1fb; --bg-1:#e4e9fb; --bg-2:#dfe7ff;
+  --ink:#151827; --muted:#5b6178; --line:rgba(20,24,50,.10);
+  --glass:rgba(255,255,255,.55); --glass-strong:rgba(255,255,255,.75); --glass-soft:rgba(20,24,50,.04);
+  --field:rgba(255,255,255,.7); --field-line:rgba(20,24,60,.14);
+  --shadow:0 8px 28px rgba(30,40,90,.14);
+  --stage-bg-a:#c9d4ff; --stage-bg-b:#eef1fb; --stage-bg-c:#ffd9ec;
+}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;color:var(--ink);
+  font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  padding:max(16px,env(safe-area-inset-top)) 16px calc(32px + env(safe-area-inset-bottom));
+  background:
+    radial-gradient(1200px 800px at 85% -10%, var(--bg-2), transparent 60%),
+    radial-gradient(900px 700px at -10% 10%, var(--bg-1), transparent 55%),
+    var(--bg-0);
+  background-attachment:fixed;
+  transition:background-color var(--dur) ease, color var(--dur) ease;
+}
+main{max-width:760px;margin:0 auto}
+h1{font-size:1.5rem;letter-spacing:-.01em;margin:8px 0 14px;display:flex;align-items:center;gap:10px}
+a{color:var(--action)}
+.note{color:var(--muted);font-size:.9rem}
+
+/* ---------- top bar: title + theme toggle, shared shape on every page ---------- */
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px}
+.topbar h1{margin:0}
+.theme-toggle{
+  display:flex;align-items:center;gap:8px;width:auto;padding:9px 14px;border-radius:999px;
+  background:var(--glass);border:1px solid var(--line);backdrop-filter:blur(var(--blur));-webkit-backdrop-filter:blur(var(--blur));
+  color:var(--ink);font-size:.85rem;font-weight:600;cursor:pointer;box-shadow:var(--shadow);
+  transition:transform var(--dur) ease, background var(--dur) ease;
+}
+.theme-toggle:hover{transform:translateY(-1px)}
+.theme-toggle span[data-theme-icon]{font-size:1rem;line-height:1}
+
+/* ---------- glass panel (the workhorse card) ---------- */
+.panel{
+  background:var(--glass);border:1px solid var(--line);border-radius:var(--radius);
+  padding:16px;margin:14px 0;backdrop-filter:blur(var(--blur));-webkit-backdrop-filter:blur(var(--blur));
+  box-shadow:var(--shadow);
+}
+.panel>b{font-size:1rem;letter-spacing:.01em}
+.row{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0}
+.row>*{flex:1;min-width:130px}
+label{display:block;color:var(--muted);font-size:.82rem;margin-bottom:4px;font-weight:600}
+
+input,select,button{
+  font:inherit;padding:12px 13px;border-radius:var(--radius-sm);border:1px solid var(--field-line);
+  background:var(--field);color:var(--ink);width:100%;transition:border-color var(--dur),box-shadow var(--dur),transform var(--dur);
+}
+button{cursor:pointer;font-weight:600}
+button:hover{border-color:var(--action)}
+button:active{transform:scale(.98)}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--action);outline-offset:2px}
+button.go{background:linear-gradient(135deg,var(--action),#a06bff);border-color:transparent;color:#fff;font-weight:700;box-shadow:0 6px 20px rgba(124,156,255,.35)}
+button.live{background:linear-gradient(135deg,var(--live),#ff7a5c);border-color:transparent;color:#fff;font-weight:700;box-shadow:0 0 0 rgba(255,77,109,.5);animation:livepulse 2s infinite}
+@keyframes livepulse{0%,100%{box-shadow:0 0 0 0 rgba(255,77,109,.45)}50%{box-shadow:0 0 0 8px rgba(255,77,109,0)}}
+button:disabled,input:disabled,select:disabled{opacity:.5;cursor:not-allowed}
+button.ghost{background:transparent;border:1px solid var(--field-line)}
+button.small{padding:8px 10px;font-size:.85rem;width:auto}
+
+#status{display:inline-block;padding:6px 14px;border-radius:999px;background:var(--glass-soft);font-weight:700;font-size:.85rem;border:1px solid var(--line)}
+#status.ok{background:rgba(47,214,138,.16);color:var(--ok);border-color:rgba(47,214,138,.3)}
+#status.live{background:linear-gradient(135deg,var(--live),#ff7a5c);color:#fff;border-color:transparent}
+#status.warn{background:rgba(255,181,69,.16);color:var(--warn);border-color:rgba(255,181,69,.3)}
+#status.bad{background:rgba(255,90,106,.16);color:var(--bad);border-color:rgba(255,90,106,.3)}
+
+pre{white-space:pre-wrap;word-break:break-word;font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;color:var(--muted);margin:8px 0 0}
+#stats{color:var(--ink);min-height:3.2em}
+#log{max-height:180px;overflow:auto}
+
+/* ---------- the stage: centered avatar over a live animated background ---------- */
+.stage-wrap{position:relative;border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);border:1px solid var(--line)}
+canvas#stage{display:block;width:100%;height:auto;background:#000;border-radius:var(--radius-lg)}
+video{display:block;width:100%;aspect-ratio:16/9;object-fit:contain;background:#000;border-radius:var(--radius-lg)}
+
+/* ---------- landscape / wide layout: the character stays fully on screen, never scrolled away ----------
+   On phones in portrait everything still stacks top-to-bottom exactly as before (no HTML/behavior change).
+   From a landscape phone upward, main becomes a 2-column grid: the stage (character) pins to the left and
+   stays pinned via position:sticky while only the right-hand `.sidebar` (controls/chat/log) scrolls - so
+   manipulating the character or watching it react never requires scrolling up and down to find it. */
+@media (min-width:760px) and (orientation:landscape), (min-width:1050px){
+  body:has(.sidebar){padding-left:max(20px,env(safe-area-inset-left));padding-right:max(20px,env(safe-area-inset-right))}
+  main:has(> .sidebar){
+    max-width:min(1600px,96vw);
+    display:grid;grid-template-columns:minmax(380px,1.35fr) minmax(320px,420px);
+    gap:16px;align-items:start;
+  }
+  main:has(> .sidebar) .topbar{grid-column:1 / -1}
+  main:has(> .sidebar) .stage-wrap{
+    position:sticky;top:max(12px,env(safe-area-inset-top));
+    align-self:start;max-height:calc(100dvh - 24px);
+  }
+  main:has(> .sidebar) canvas#stage,
+  main:has(> .sidebar) video{max-height:calc(100dvh - 24px);width:100%;object-fit:contain}
+  main:has(> .sidebar) .sidebar{
+    max-height:calc(100dvh - 24px);overflow-y:auto;overscroll-behavior:contain;
+    padding-right:4px;scrollbar-width:thin;
+  }
+  main:has(> .sidebar) .sidebar::-webkit-scrollbar{width:8px}
+  main:has(> .sidebar) .sidebar::-webkit-scrollbar-thumb{background:var(--line);border-radius:99px}
+}
+@media (min-width:1300px) and (orientation:landscape){
+  main:has(> .sidebar){grid-template-columns:minmax(460px,1.6fr) minmax(340px,440px)}
+}
+
+/* floating glass admin dock, overlaid on the stage: theme, layout, background, minimize */
+.dock{
+  position:absolute;top:10px;left:10px;right:10px;display:flex;gap:8px;flex-wrap:wrap;
+  pointer-events:none;                 /* only its children (the buttons) are clickable */
+}
+.dock>*{pointer-events:auto}
+.dock-btn{
+  display:flex;align-items:center;gap:6px;padding:8px 12px;border-radius:999px;
+  background:var(--glass-strong);border:1px solid rgba(255,255,255,.18);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  color:#fff;font-size:.8rem;font-weight:600;cursor:pointer;width:auto;box-shadow:0 4px 16px rgba(0,0,0,.35);
+  transition:transform var(--dur) ease, background var(--dur) ease;
+}
+.dock-btn:hover{transform:translateY(-1px);background:rgba(124,156,255,.35)}
+.dock-btn.active{background:linear-gradient(135deg,var(--action),#a06bff);border-color:transparent}
+.dock-spacer{flex:1 1 auto}
+.dock select.dock-select{
+  width:auto;padding:8px 10px;border-radius:999px;background:var(--glass-strong);color:#fff;
+  border:1px solid rgba(255,255,255,.18);font-size:.8rem;font-weight:600;
+}
+.stage-badge{
+  position:absolute;bottom:10px;left:10px;padding:5px 11px;border-radius:999px;font-size:.72rem;font-weight:700;
+  background:var(--glass-strong);color:#fff;border:1px solid rgba(255,255,255,.16);letter-spacing:.02em;
+}
+.stage-badge.live{background:linear-gradient(135deg,var(--live),#ff7a5c);border-color:transparent}
+.stage-badge.groq::before{content:'⚡ ';}
+.stage-badge.claude::before{content:'✦ ';}
+.stage-badge.free::before{content:'☁ ';}
+.stage-badge.rules::before{content:'▪ ';}
+.stage-badge.tilt-hint{left:auto;right:10px;cursor:pointer;border:none;animation:tiltPulse 2.2s ease-in-out infinite}
+@keyframes tiltPulse{0%,100%{opacity:.85}50%{opacity:1}}
+
+/* ---------- chat ---------- */
+#chatlog{height:200px;overflow:auto;background:var(--glass-soft);border:1px solid var(--line);border-radius:var(--radius-sm);padding:10px;font-size:.93rem}
+.msg{padding:4px 2px;word-break:break-word}
+.msg b{margin-right:4px}
+.msg.bot b{color:var(--action)}
+.msg.bot{background:rgba(124,156,255,.14);border-radius:8px;padding:5px 9px;margin:3px 0}
+.msg.bot.baseline{opacity:.72}
+.msg.bot.baseline b{color:var(--muted)}
+.chatrow{display:flex;gap:8px;margin-top:10px}
+.chatrow input[name=msg]{flex:1;min-width:0}
+.chatrow input[name=who]{width:7.5rem;flex:none}
+.chatrow button{width:auto;flex:none}
+input[type=range]{padding:0;height:40px;accent-color:var(--action)}
+.check{display:flex;align-items:center;gap:8px;color:var(--ink);font-size:.93rem}
+.check input{width:auto;accent-color:var(--action)}
+.offscreen{position:fixed;left:-9999px;top:0;pointer-events:none}
+
+/* pure-virtual avatar stage (view.html): background + avatar canvases layered, no video element.
+   3/4 here is only a placeholder shown before the rig has loaded - view.html overwrites this with the
+   character's real aspect ratio via JS once known, so the box always matches the character's own
+   proportions exactly (no letterboxing, no wasted space) instead of guessing a fixed shape that's
+   usually wrong for a standing figure. max-height keeps it from growing absurdly tall on short/landscape
+   viewports where width no longer is the limiting dimension. */
+.avatar-stage{position:relative;width:100%;aspect-ratio:3/4;max-height:82dvh;margin:0 auto;border-radius:var(--radius-lg);overflow:hidden;background:#000;
+  --avatar-zoom:1.12; /* fallback fill amount before onMotion's first SSE event sets the real one (see view.html) */
+}
+.avatar-stage canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.avatar-stage canvas.bg{z-index:1}
+/* object-fit:contain is the actual fix for the blurred/stretched limbs: the canvas's own internal pixel
+   resolution has its own aspect ratio (computed from the character in avatar.js), which almost never
+   matches the box's CSS aspect ratio. Without this, the browser force-stretches the image non-uniformly
+   to fill the box exactly - warping hands/arms. object-fit:contain scales it proportionally instead,
+   centered in the box, so nothing gets distorted no matter what shape the container is.
+   The extra transform:scale() on top is the permanent (not a mobile-only breakpoint hack) fix for the
+   character floating in the middle of the box with background showing all around him on every screen
+   size, desktop included: it crops in a bit past the reach-padding avatar.js reserves around the
+   character (see the VIEW-padding comment there), so he actually fills the card. --avatar-zoom is set
+   live from the publisher's "Character size" control (onMotion in view.html) and .avatar-stage still
+   clips with overflow:hidden, so a wide sideways gesture can graze the frame edge rather than spill out. */
+.avatar-stage canvas.avatar{z-index:2;object-fit:contain;transform:scale(var(--avatar-zoom));transform-origin:50% 100%}
+.test-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.test-row button{font-size:.85em}
+.test-row button:disabled{opacity:.45;cursor:not-allowed}
+.tinycam{position:fixed;right:0;bottom:0;width:2px;height:2px;opacity:.01;pointer-events:none}
+
+/* ---------- mobile: give the stage full priority - bleed the CARD out to the true screen edges (it
+   cancels out body's fixed 16px side padding, so it stays exact at any viewport width with no
+   scrollbar/overflow edge cases). This is what makes the card itself fill the phone's width; the
+   character's own fill amount is the --avatar-zoom rule above, which now applies at every size, not
+   just here. Scoped to the same width the single-column layout owns (below the point where the
+   landscape/tablet grid further up takes over), so tablets/desktop are untouched. */
+@media (max-width:759px){
+  main:has(.stage-wrap){max-width:none}
+  .stage-wrap{
+    width:calc(100% + 32px);
+    margin:0 -16px;
+    border-radius:0;
+  }
+  .avatar-stage{border-radius:0;max-height:78dvh;--avatar-zoom:1.35}
+}
+@media (max-width:520px){
+  .chatrow{flex-wrap:wrap}
+  .chatrow input[name=who]{flex:1 1 100%;width:auto}
+  .dock{position:static;padding:8px;background:var(--glass-strong);border-radius:0 0 var(--radius) var(--radius)}
+}
+
+/* ---------- wave / pointing / voice tuning ---------- */
+details#waveTune,details#pointTune{margin:10px 0;padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--glass-soft)}
+details#waveTune summary,details#pointTune summary{cursor:pointer;font-weight:600}
+#voiceRows{margin:6px 0 2px}
+.tune{display:grid;grid-template-columns:9.5rem 1fr 4.6rem;gap:8px;align-items:center;margin:5px 0}
+.tune label{margin:0}
+.tune input[type=number]{padding:6px;text-align:right}
+.tune input[type=range]{height:26px}
+
+/* ---------- gesture library grid ---------- */
+.gesture-grid{display:flex;flex-wrap:wrap;gap:8px}
+.gesture-grid button{width:auto;flex:1 1 auto;min-width:100px}
+
+/* ---------- landing page cards ---------- */
+.card-link{display:block;background:var(--glass);border:1px solid var(--line);border-radius:var(--radius);
+  padding:16px;margin:12px 0;backdrop-filter:blur(var(--blur));-webkit-backdrop-filter:blur(var(--blur));
+  box-shadow:var(--shadow);text-decoration:none;color:var(--ink);transition:transform var(--dur) ease}
+.card-link:hover{transform:translateY(-2px)}
+.card-link b{color:var(--action)}
+
+/* ---------- baseline script editor ---------- */
+#scriptRows textarea{
+  font:inherit;width:100%;min-height:110px;padding:10px;border-radius:var(--radius-sm);
+  background:var(--field);color:var(--ink);border:1px solid var(--field-line);resize:vertical;
+}
+
+/* quick bar: fixed, thumb-reachable, always visible while you scroll */
+.qbar{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(10px + env(safe-area-inset-bottom,0px));z-index:50;display:flex;gap:6px;flex-wrap:wrap;justify-content:center;max-width:calc(100vw - 16px);padding:8px;border-radius:22px;background:var(--glass-strong);border:1px solid rgba(255,255,255,.2);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);box-shadow:0 8px 30px rgba(0,0,0,.45)}
+.qbar .q{width:auto;margin:0;padding:9px 12px;border-radius:999px;font-size:.82rem;font-weight:600;color:#fff;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);cursor:pointer;min-height:40px}
+.qbar .q.on{background:linear-gradient(135deg,var(--action),#a06bff);border-color:transparent}
+.qbar .q.off{background:#c0392b;border-color:transparent}
+.qbar select.q option{color:#000}
+main{padding-bottom:110px}
+
+/* ---------- moderation: script-change confirm + held-for-approval queue ---------- */
+.confirm-box{margin-top:10px;padding:10px 12px;border-radius:var(--radius-sm);
+  background:rgba(255,180,60,.10);border:1px solid rgba(255,180,60,.35)}
+.confirm-box pre{white-space:pre-wrap;word-break:break-word;max-height:180px;overflow:auto;
+  font-size:.85rem;background:var(--field);border:1px solid var(--field-line);border-radius:var(--radius-sm);padding:8px}
+.pending-row{display:flex;flex-direction:column;gap:4px;padding:8px 10px;margin:6px 0;
+  border-radius:var(--radius-sm);background:var(--field);border:1px solid var(--field-line)}
+.pending-row input{font:inherit;width:100%;padding:6px 8px;border-radius:8px;
+  background:var(--glass);color:var(--ink);border:1px solid var(--field-line)}
+.pending-row .row{gap:6px}
+#pendingList:empty::after{content:'—';color:var(--muted,#888)}
+.msg.silent{opacity:.7;font-style:italic}

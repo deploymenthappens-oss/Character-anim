@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Watch</title>
+<link rel="stylesheet" href="style.css">
+<script src="theme.js"></script>
+</head><body><main>
+<div class="topbar">
+  <h1>Watch the stream</h1>
+  <button class="theme-toggle" id="themeBtn" type="button"><span data-theme-icon>☀️</span><span data-theme-label>Light mode</span></button>
+</div>
+
+<!-- No video track here on purpose: the character is never baked into pixels. Every viewer renders their
+     own copy of the same Rive avatar locally and reacts to small JSON events broadcast over /events (SSE) -
+     the admin's dashboard, the chat replies, gestures and background are all just events, so this page
+     stays plain HTTPS/TCP (no MediaMTX/WHEP/UDP at all). See avatar.js / avatar-orchestra.js / lipsync.js. -->
+<div class="stage-wrap">
+  <div class="avatar-stage" id="stage">
+    <canvas class="bg" id="bgCanvas"></canvas>
+    <canvas class="avatar" id="avatarCanvas" width="900" height="900"></canvas>
+    <button class="stage-badge tilt-hint" id="tiltHint" type="button" hidden>🧭 Tap for tilt</button>
+  </div>
+</div>
+
+<div class="sidebar">
+<div class="panel">
+  <span id="status">Connecting…</span>
+  <label class="check"><input id="monitor" type="checkbox" checked> Play the avatar's voice</label>
+  <span class="note" id="avatarState">loading…</span>
+  <div class="test-row" id="testRow"></div>
+  <p class="note" id="testNote"></p>
+</div>
+
+<div class="panel">
+  <b>Comments</b> <span class="note" id="chatState"></span>
+  <div id="chatlog" aria-live="polite"></div>
+  <div class="chatrow">
+    <input name="who" id="chatname" aria-label="Your name" autocomplete="off" maxlength="24">
+    <input name="msg" id="chatmsg" aria-label="Comment" placeholder="Type a comment…" autocomplete="off" maxlength="200">
+    <button id="chatsend" type="button" class="go">Send</button>
+  </div>
+</div>
+
+<div class="panel"><b>Log</b><pre id="log"></pre></div>
+</div><!-- /sidebar -->
+
+<script src="stage-bg.js"></script>
+<script src="lipsync.js"></script>
+<script src="avatar-orchestra.js"></script>
+<script src="avatar.js"></script>
+<script src="chat.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+Theme.init('themeBtn');
+
+function log(m) { $('log').textContent = `[${new Date().toLocaleTimeString()}] ${m}\n` + $('log').textContent; }
+function setStatus(text, cls = '') {
+  $('status').textContent = text; $('status').className = cls;
+}
+
+// ================= background =================
+const bg = new StageBackground.StageBackground($('bgCanvas'), 'aurora');
+// Phone: device-tilt parallax needs a tap first (iOS gates deviceorientation behind a permission
+// prompt that only fires from a user gesture). Desktop gets mouse parallax automatically - no hint
+// needed there. See stage-bg.js enableDeviceTilt().
+if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) {
+  const hint = $('tiltHint'); hint.hidden = false;
+  hint.onclick = () => { bg.enableDeviceTilt().then(ok => { if (ok) hint.hidden = true; else hint.textContent = '🧭 Tilt unavailable'; }); };
+}
+
+// ================= avatar =================
+const rig = new AvatarRig({ canvas: $('avatarCanvas') });
+let ctx = null, speaker = null;
+function unlockAudio() {
+  if (!ctx) { const AC = window.AudioContext || window.webkitAudioContext; ctx = new AC(); }
+  if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+}
+['pointerdown', 'touchend', 'click', 'keydown'].forEach(ev => document.addEventListener(ev, unlockAudio, { passive: true }));
+function getSpeaker() {
+  unlockAudio();
+  if (!speaker) speaker = new Speaker({ rig, ctx, destination: ctx.destination, motion: () => ({ gesture: true, wave: true }) });
+  return speaker;
+}
+
+rig.load()
+  .then(() => {
+    $('avatarState').textContent = 'ready';
+    log('avatar loaded, ' + rig.version);
+    rig.setLooking(true);
+    buildTestRow();
+    setStatus('● LIVE', 'live');
+    syncStageRatio();
+  })
+  .catch(e => { $('avatarState').textContent = 'failed to load'; log('AVATAR ERROR: ' + e.message); });
+
+// Sizes the stage box to the character's ACTUAL proportions (from the avatar canvas's own resolution,
+// which avatar.js computes from the real artboard + padding) instead of a guessed fixed CSS ratio - this
+// is what makes him fill the box on mobile instead of floating in a mismatched letterboxed shape. Re-checked
+// occasionally because the reach-probe (avatar.js) can still grow the canvas the first time an unusually
+// wide gesture plays.
+let _stageRatio = null;
+function syncStageRatio() {
+  if (!rig.ready || !rig.canvas.width || !rig.canvas.height) return;
+  const r = rig.canvas.width / rig.canvas.height;
+  if (r !== _stageRatio) { $('stage').style.aspectRatio = String(r); _stageRatio = r; }
+}
+setInterval(syncStageRatio, 1500);
+
+// Only look at the pointer while it's actually over the character's own box. This used to measure x/y
+// against the whole page (innerWidth/innerHeight), so tapping a button or panel anywhere else on the page
+// - the gesture test row right below the stage, the chat input, etc - was read as "look way down/to the
+// side" and snapped the head into an extreme, glitchy-looking tilt with the hair dragged along behind it,
+// which had nothing to do with where the viewer was actually looking. Clamped too, so a drag that ends
+// outside the box can't leave the target pinned past +-1.
+function trackPointer(e) {
+  if (!rig.ready) return;
+  const rect = $('stage').getBoundingClientRect();
+  if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) return;
+  const clamp1 = v => Math.max(-1, Math.min(1, v));
+  const x = clamp1(((e.clientX - rect.left) / rect.width) * 2 - 1);
+  const y = clamp1(((e.clientY - rect.top) / rect.height) * 2 - 1);
+  rig.lookAt(x, y);
+}
+['pointermove', 'pointerdown'].forEach(ev => document.addEventListener(ev, trackPointer, { passive: true }));
+
+// ---- a handful of free "test the character" gesture buttons (rate-limited server-side; see /gesture/test) ----
+const TEST_GESTURES = ['wave', 'nod', 'shake', 'celebrate', 'thinking'];
+function buildTestRow() {
+  const row = $('testRow'); row.innerHTML = '';
+  for (const name of TEST_GESTURES) {
+    const b = document.createElement('button'); b.type = 'button'; b.textContent = name;
+    b.onclick = () => testGesture(name, b);
+    row.appendChild(b);
+  }
+}
+async function testGesture(name) {
+  if (rig.ready && rig.orchestra) rig.orchestra.cue(name);   // instant local feedback either way
+  try {
+    const r = await fetch('gesture/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+    const d = await r.json().catch(() => ({}));
+    if (r.status === 429) {
+      $('testNote').textContent = "You've used all your free test moves for now.";
+      document.querySelectorAll('#testRow button').forEach(b => b.disabled = true);
+      return;
+    }
+    if (typeof d.remaining === 'number') {
+      $('testNote').textContent = `${d.remaining} free test move${d.remaining === 1 ? '' : 's'} left.`;
+      if (d.remaining <= 0) document.querySelectorAll('#testRow button').forEach(b => b.disabled = true);
+    }
+  } catch (e) { log('test gesture failed: ' + e.message); }
+}
+
+// ================= reply / gesture / background / motion, all over the same SSE stream =================
+function onReply(msg) {
+  if (!rig.ready) return;
+  const sp = getSpeaker(); sp.setMuted(!$('monitor').checked);
+  // A reply to an actual viewer comment (not the idle baseline loop) always gets the wave - that's the
+  // "hi, I heard you" beat that makes a reply read as a reaction to the comment rather than more filler.
+  // gesture:false suppresses the Speaker's default full-body "action" clip for that same reply, so a real
+  // comment is answered with the wave ONLY (no extra gesture layered on top); the baseline script keeps
+  // its old behaviour (action clip, no wave) since it isn't reacting to anyone.
+  const isCommentReply = !msg.baseline;
+  (async () => {
+    try {
+      const [r, w] = await Promise.all([
+        fetch(`audio/${msg.id}`),
+        fetch(`audio/${msg.id}/words`).then(x => x.ok ? x.json() : { words: null }).catch(() => ({ words: null })),
+      ]);
+      if (!r.ok) throw new Error('audio HTTP ' + r.status);
+      const bytes = await r.arrayBuffer();
+      bg.pulse(1);
+      if (rig.ready) rig.setEnergy(isCommentReply ? 0.85 : 0.6);   // a reaction to a real comment reads livelier than the idle baseline script
+      // words: real per-word timestamps from the TTS engine (Edge), when available, give word-accurate
+      // ('words'-mode) lip-sync instead of the text-only timing estimate - already wired through here.
+      await sp.say(bytes, msg.text, { words: w.words || null, motion: { wave: isCommentReply, gesture: !isCommentReply } });
+    } catch (e) { log('avatar speech failed: ' + e.message); rig.setViseme(0); }
+    finally { bg.pulse(0); if (rig.ready) rig.setEnergy(0.3); }   // settle back to a quiet idle baseline
+  })();
+}
+// Gestures are event-driven (SSE), not video, so if THIS viewer's avatar was still mid-gesture when a new
+// cue arrived, orchestra.cue() used to just drop it silently - the publisher's own preview played it fine
+// (locally, instantly) but some viewers never would, which is exactly the "not syncing / not functional"
+// gap. Now a busy cue is retried for a few seconds (arms are free again in ~3.2s) instead of thrown away,
+// and only the single most recent gesture is ever queued (a newer one replaces an older pending one, so
+// spamming buttons can't build up a backlog of stale moves).
+let pendingGesture = null, pendingGestureTimer = null;
+const GESTURE_RETRY_MS = 220, GESTURE_MAX_AGE_MS = 4000;
+function onGesture(d) {
+  if (!rig.ready || !rig.orchestra) return;
+  if (rig.orchestra.cue(d.name, { side: d.side })) { pendingGesture = null; return; }
+  log(`gesture "${d.name}" busy - queued`);
+  pendingGesture = d;
+  scheduleGestureRetry();
+}
+function scheduleGestureRetry() {
+  if (pendingGestureTimer) return;
+  pendingGestureTimer = setTimeout(() => {
+    pendingGestureTimer = null;
+    if (!pendingGesture) return;
+    const d = pendingGesture;
+    if (d.ts && Date.now() - d.ts > GESTURE_MAX_AGE_MS) { pendingGesture = null; log(`gesture "${d.name}" expired (too stale to still feel synced)`); return; }
+    if (!rig.ready || !rig.orchestra) { scheduleGestureRetry(); return; }
+    if (rig.orchestra.cue(d.name, { side: d.side })) { pendingGesture = null; return; }
+    scheduleGestureRetry();
+  }, GESTURE_RETRY_MS);
+}
+function onBackground(d) { if (d && d.theme) bg.setTheme(d.theme); }
+// The publisher's "Character size" slider (25-100, default 66) used to set the STAGE BOX's own
+// max-width to that percentage - which is what was leaving the card with big dead margins on both
+// sides instead of a smaller character (shrinking the box, not the character, is only right for
+// publish.html's small camera-corner bubble; this page is always one big centered character, so the
+// box itself stays permanently full-width). "size" now drives how much of that always-full-width box
+// the character's own artwork fills, via a zoom on the avatar canvas: 25 -> a conservative crop
+// (more of the animated background shows), 100 -> fills almost edge-to-edge.
+function onMotion(d) {
+  if (d && Number.isFinite(d.size)) {
+    const pct = Math.max(25, Math.min(100, d.size));
+    // Mobile gets a higher floor/ceiling than desktop: on a narrow phone screen every bit of the
+    // (smaller) stage box matters, so the same slider position should crop in tighter than it does
+    // on a big desktop stage. 25 -> a conservative crop, 100 -> fills edge-to-edge.
+    const isMobile = window.innerWidth < 760;
+    const base = isMobile ? 1.05 : 0.85, range = isMobile ? 0.55 : 0.6;
+    const zoom = base + (pct - 25) / 75 * range;   // mobile: 1.05x..1.60x (default 66 -> ~1.35x)
+    $('stage').style.setProperty('--avatar-zoom', zoom.toFixed(3));
+  }
+}
+function onSpeechState(d) {
+  if (d && d.paused) { if (speaker) speaker.stop(); if (rig.ready) rig.setViseme(0); bg.pulse(0); }
+}
+function onInterrupt() {
+  if (speaker) speaker.stop();
+  if (rig.ready) rig.setViseme(0);
+  bg.pulse(0);
+}
+function onHistory(d) {
+  if (d && d.background) bg.setTheme(d.background);
+  if (d && d.motion) onMotion(d.motion);
+  if (d && typeof d.speechPaused === 'boolean') onSpeechState({ paused: d.speechPaused });
+}
+const chat = new Chat({
+  log: $('chatlog'), name: $('chatname'), msg: $('chatmsg'), send: $('chatsend'), status: $('chatState'),
+  onReply,
+  onComment: () => { if (rig.ready) rig.wave('comment'); },
+  onMode: onHistory,
+  onInterrupt,
+  onGesture, onBackground, onMotion, onSpeechState,
+});
+chat.init();
+</script>
+</main></body></html>

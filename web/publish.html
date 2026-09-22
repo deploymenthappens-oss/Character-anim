@@ -1,0 +1,1259 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Go live</title>
+<link rel="stylesheet" href="style.css">
+<script src="theme.js"></script>
+</head><body><main>
+<div class="topbar">
+  <h1>Go live from this phone</h1>
+  <button class="theme-toggle" id="themeBtn" type="button"><span data-theme-icon>☀️</span><span data-theme-label>Light mode</span></button>
+</div>
+
+<!-- what viewers see: camera + avatar composited on one canvas, framed as a single glass "stage" -->
+<div class="qbar" id="qbar">
+  <button id="qTalk" type="button" class="q" title="Script loop: the avatar keeps talking with your script. Off = idle, no talking">😶 Idle (no talking)</button>
+  <select id="qReplies" class="q" title="Reply to comments">
+    <option value="all">💬 Replies: all</option>
+    <option value="mention">💬 Replies: questions/@ only</option>
+    <option value="review">💬 Replies: hold for approval</option>
+    <option value="off">💬 Replies: off</option>
+  </select>
+  <button id="qStop" type="button" class="q" title="Stop the avatar from talking right now: cuts off whatever it's saying and holds it silent until you toggle this off again">🗯 Stop talking</button>
+  <button id="qMute" type="button" class="q" title="Mute the avatar's voice (mouth keeps moving)">🔊 Voice</button>
+  <button id="qMic" type="button" class="q" title="Mute your microphone in the stream">🎙 Mic</button>
+  <select id="qCine" class="q" title="Auto camera moves: push-ins, pull-outs, handheld drift">
+    <option value="off">🎥 Camera: static</option>
+    <option value="subtle">🎥 Camera: subtle</option>
+    <option value="cinematic" selected>🎥 Camera: cinematic</option>
+    <option value="dramatic">🎥 Camera: dramatic</option>
+  </select>
+  <button id="qIn" type="button" class="q" title="Lean in">➕</button>
+  <button id="qOut" type="button" class="q" title="Lean out">➖</button>
+</div>
+<div class="stage-wrap">
+  <canvas id="stage" width="1280" height="720"></canvas>
+  <video id="cam" class="tinycam" playsinline muted></video>
+  <!-- The width is recalculated from the artboard + VIEW padding as soon as the rig loads. -->
+  <canvas id="avatarCanvas" class="offscreen" width="900" height="900" aria-hidden="true"></canvas>
+
+  <!-- floating admin dock: layout, background and minimize, all live-manipulable while watching the stage -->
+  <div class="dock">
+    <button class="dock-btn" id="dockStageMode" type="button" title="Toggle centered stage vs. camera-corner layout">🎬 Center stage</button>
+    <select class="dock-select" id="bgTheme" title="Live background theme">
+      <option value="aurora" selected>Aurora</option>
+      <option value="midnight">Midnight</option>
+      <option value="sunset">Sunset</option>
+      <option value="studio">Studio</option>
+      <option value="neon">Neon grid</option>
+      <option value="bokeh">Bokeh lights</option>
+    </select>
+    <select class="dock-select" id="frameMode" title="How much of the character to show">
+      <option value="full" selected>Full body (legs)</option>
+      <option value="half">Half body (desk)</option>
+    </select>
+    <button class="dock-btn" id="dockLegs" type="button" title="Show or hide the character's legs (full body frame)">🦵 Legs: on</button>
+    <div class="dock-spacer"></div>
+    <button class="dock-btn" id="dockMinimize" type="button" title="Minimize the character to a small corner badge">⤡ Minimize</button>
+  </div>
+  <span class="stage-badge" id="providerBadge">rules</span>
+</div>
+
+<div class="sidebar">
+<div class="panel">
+  <div class="row">
+    <div><label for="name">Stream name</label><input id="name" value="mystream" autocapitalize="off" autocomplete="off"></div>
+    <div><label for="quality">Quality</label>
+      <select id="quality">
+        <option value="360">360p (~0.8 Mbps)</option>
+        <option value="720" selected>720p (~2.5 Mbps)</option>
+        <option value="1080">1080p (~4.5 Mbps)</option>
+      </select></div>
+  </div>
+  <div class="row">
+    <button id="flip" type="button">Flip camera</button>
+    <button id="go" type="button" class="go">Start streaming</button>
+  </div>
+  <span id="status">Idle</span>
+  <pre id="stats"></pre>
+</div>
+
+<div class="panel">
+  <b>Stage layout</b> <span class="note">what's behind the character in the composited stream</span>
+  <div class="row">
+    <div><label for="stageMode">Layout</label>
+      <select id="stageMode">
+        <option value="camera" selected>Camera background, avatar in the corner</option>
+        <option value="center">Character centered, live background</option>
+      </select></div>
+    <div><label for="apos">Corner position</label>
+      <select id="apos">
+        <option value="right" selected>Bottom right</option>
+        <option value="left">Bottom left</option>
+        <option value="off">Hidden</option>
+      </select></div>
+  </div>
+  <div class="row">
+    <div><label for="asize">Character size</label><input id="asize" type="range" min="25" max="100" value="66"></div>
+  </div>
+  <label class="check"><input id="camPip" type="checkbox" checked> In centered layout, show the camera as a small corner picture-in-picture</label>
+</div>
+
+<div class="panel">
+  <b>Avatar</b> <span class="note" id="avatarState">loading…</span>
+  <label class="check"><input id="monitor" type="checkbox"> Also play the avatar's voice on this phone (use headphones)</label>
+
+  <b>Motion</b> <span class="note" id="motionState"></span>
+  <div class="row">
+    <button id="tGesture" type="button">Test gesture</button>
+    <button id="tWave" type="button">Test wave</button>
+    <button id="tStop" type="button">Stop motion</button>
+  </div>
+  <p class="note">Gesture library (each button plays that one gesture on its own):</p>
+  <div class="gesture-grid">
+    <button id="btGlasses" type="button">Glasses push</button>
+    <button id="btLean" type="button">Lean in</button>
+    <button id="btShocked" type="button">Shocked</button>
+    <button id="btThinking" type="button">Thinking</button>
+    <button id="btNod" type="button">Nod</button>
+    <button id="btShake" type="button">Shake head</button>
+    <button id="btShrug" type="button">Shrug</button>
+    <button id="btPresent" type="button">Present</button>
+    <button id="btCelebrate" type="button">Celebrate</button>
+    <button id="btFoot" type="button">Foot tap</button>
+    <button id="btShift" type="button">Weight shift</button>
+    <button id="btBounce" type="button">Bounce</button>
+    <button id="btHop" type="button">Hop</button>
+    <button id="btJump" type="button">Jump</button>
+    <button id="btMarch" type="button">March</button>
+    <button id="btKick" type="button">Side kick</button>
+    <button id="btStomp" type="button">Stomp</button>
+    <button id="btDance" type="button">Dance</button>
+  </div>
+  <details id="waveTune">
+    <summary><b>Wave controls</b> <span class="note">(angles in degrees: 0 = right, -90 = up, ±180 = left)</span></summary>
+    <div id="tuneRows"></div>
+    <div class="row">
+      <button id="tPlay" type="button">Play wave</button>
+      <button id="tReset" type="button">Reset</button>
+      <button id="tCopy" type="button">Copy values</button>
+    </div>
+    <p class="note" id="tuneNote">Changes apply on the next wave and are kept in this browser.</p>
+  </details>
+  <details id="pointTune">
+    <summary><b>Pointing controls</b> <span class="note">(angles: 90 = arm down, 180 = out to the side, 270 = up)</span></summary>
+    <div id="pointRows"></div>
+    <div class="row">
+      <button id="pReset" type="button">Reset</button>
+      <button id="pCopy" type="button">Copy values</button>
+    </div>
+    <p class="note" id="pointNote">Changes apply straight away and are kept in this browser.</p>
+  </details>
+  <label class="check"><input id="mComment" type="checkbox" checked> Wave as soon as a comment arrives</label>
+  <label class="check"><input id="mWave" type="checkbox" checked> Wave when the avatar starts to reply</label>
+  <label class="check"><input id="mGesture" type="checkbox" checked> Head/arm gesture while replying</label>
+  <label class="check"><input id="mStop" type="checkbox" checked> Stop the reply's movement when speech ends</label>
+  <label class="check"><input id="mLook" type="checkbox" checked> Follow the mouse with the eyes and head</label>
+  <label class="check"><input id="mPoint" type="checkbox" checked> Point at the mouse with the arm</label>
+  <label class="check"><input id="mCue" type="checkbox" checked> Auto-play a matching gesture for keywords in replies</label>
+  <label class="check"><input id="mLegs" type="checkbox" checked> Leg life while idle (weight shifts, foot fidgets)</label>
+
+  <b>Voice</b> <span class="note">shaped in this browser, before it goes into the stream</span>
+  <div class="row">
+    <div><label for="voiceEn">English voice (free neural, no key)</label>
+      <select id="voiceEn">
+        <option value="en-US-AriaNeural">Aria (US, warm)</option>
+        <option value="en-US-GuyNeural">Guy (US, male)</option>
+        <option value="en-GB-SoniaNeural">Sonia (UK)</option>
+      </select></div>
+    <div><label for="voiceAr">Arabic voice</label>
+      <select id="voiceAr">
+        <option value="ar-EG-SalmaNeural">سلمى (مصري)</option>
+        <option value="ar-EG-ShakirNeural">شاكر (مصري، ذكر)</option>
+        <option value="ar-SA-ZariyahNeural">زارية (سعودي)</option>
+        <option value="ar-SA-HamedNeural">حامد (سعودي، ذكر)</option>
+      </select></div>
+  </div>
+  <p class="note">Picks the server's Edge text-to-speech voice for each language (falls back to the offline espeak-ng voice automatically if Edge is unreachable). Choosing a voice, not cloning one - there's no reference-audio upload here.</p>
+  <div id="voiceRows"></div>
+  <label class="check"><input id="vFilter" type="checkbox" checked> Warm filter (body + clearer consonants)</label>
+  <label class="check"><input id="vComp" type="checkbox" checked> Even out loud and quiet parts</label>
+  <div class="row">
+    <button id="vTest" type="button">Test voice</button>
+    <button id="vReset" type="button">Reset voice</button>
+  </div>
+</div>
+
+<div class="panel">
+  <b>Reference script</b> <span class="note">the avatar keeps reciting this on a loop until a comment interrupts it (or, with "Don't let comments interrupt" below, until the current line finishes)</span>
+  <div id="scriptRows">
+    <label for="scriptText">Lines (one per line)</label>
+    <textarea id="scriptText" spellcheck="false"></textarea>
+  </div>
+  <div class="row">
+    <div><label for="personaText">Persona (for AI replies)</label><input id="personaText" placeholder="a friendly, witty cartoon co-host"></div>
+  </div>
+  <div class="row">
+    <button id="scriptSave" type="button" class="go">Review changes…</button>
+    <label class="check"><input id="loopToggle" type="checkbox"> Script speaking: loop when idle</label>
+  </div>
+  <!-- Moderation for the script itself: a topic/line change is previewed here and only takes effect once
+       you click Apply below - so an edit never goes out live without a deliberate accept step. -->
+  <div id="scriptConfirm" class="confirm-box" hidden>
+    <b>Apply this script change?</b>
+    <p class="note">This replaces the lines the avatar recites when idle. Review below, then confirm.</p>
+    <pre id="scriptDiff"></pre>
+    <div class="row">
+      <button id="scriptApply" type="button" class="go">Apply</button>
+      <button id="scriptCancel" type="button">Cancel</button>
+    </div>
+  </div>
+  <p class="note" id="scriptNote"></p>
+</div>
+
+<div class="panel">
+  <b>Admin access</b> <span class="note">required once the server has an admin token set (ADMIN_TOKEN) - without it, gestures/background/motion/stop/script/voice/approvals are all rejected with 401</span>
+  <div class="row">
+    <div><label for="adminTokenInput">Admin token</label>
+      <input id="adminTokenInput" type="password" autocomplete="off" placeholder="paste the ADMIN_TOKEN value"></div>
+  </div>
+  <p class="note" id="adminState"></p>
+</div>
+
+<div class="panel">
+  <b>Moderation &amp; voice</b> <span class="note">stop the character from speaking either channel, and choose whether each one uses its voice</span>
+  <div class="row">
+    <div><label for="scriptVoiceToggle">Script</label>
+      <label class="check"><input id="scriptVoiceToggle" type="checkbox" checked> Has a voice (off = silent captions only)</label></div>
+    <div><label for="scriptProtectToggle">&nbsp;</label>
+      <label class="check"><input id="scriptProtectToggle" type="checkbox"> Don't let comments interrupt the script - finish the line first</label></div>
+  </div>
+  <div class="row">
+    <div><label for="repliesModeSel">Comments</label>
+      <select id="repliesModeSel">
+        <option value="all">Reply automatically to all comments</option>
+        <option value="mention">Reply automatically to questions / @mentions only</option>
+        <option value="review">Hold every comment for my approval</option>
+        <option value="off">Stop commenting entirely</option>
+      </select></div>
+    <div><label for="repliesVoiceToggle">&nbsp;</label>
+      <label class="check"><input id="repliesVoiceToggle" type="checkbox" checked> Replies have a voice (off = text replies only)</label></div>
+  </div>
+  <p class="note">Both channels can be silenced independently, and stopped independently - a comment being held for review is never spoken or read aloud until you approve it below.</p>
+</div>
+
+<div class="panel">
+  <b>Held for approval</b> <span class="note" id="pendingState">nothing waiting</span>
+  <div id="pendingList"></div>
+  <p class="note" id="queueState"></p>
+</div>
+
+<div class="panel">
+  <b>Comments</b> <span class="note" id="chatState"></span>
+  <div id="chatlog" aria-live="polite"></div>
+  <div class="chatrow">
+    <input name="who" id="chatname" aria-label="Your name" autocomplete="off" maxlength="24">
+    <input name="msg" id="chatmsg" aria-label="Comment" placeholder="Type a comment…" autocomplete="off" maxlength="200">
+    <button id="chatsend" type="button" class="go">Send</button>
+  </div>
+  <p class="note" id="mode"></p>
+</div>
+
+<div class="panel"><b>Log</b><pre id="log"></pre></div>
+<p class="note">Keep this tab open and the screen on while streaming. Mobile browsers pause the camera and the avatar when the page is hidden.</p>
+</div><!-- /sidebar -->
+
+<script src="lipsync.js"></script>
+<script src="avatar-orchestra.js"></script>
+<script src="avatar.js"></script>
+<script src="chat.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+// LAN test needs no STUN. For internet use, e.g. [{urls:'stun:stun.l.google.com:19302'}]
+const ICE_SERVERS = [];
+
+// ---- admin token ----
+// Every mutating endpoint (script/voice/pending/gesture/background/motion/speech) requires
+// `Authorization: Bearer <token>` once the server has ADMIN_TOKEN set (chat/server.js). Stored locally so
+// it survives a reload; blank = no header sent (fine for a local/dev server with no ADMIN_TOKEN set).
+let ADMIN_TOKEN = '';
+try { ADMIN_TOKEN = localStorage.getItem('adminToken') || ''; } catch (e) {}
+function adminFetch(path, opts) {
+  opts = opts || {};
+  const headers = Object.assign({}, opts.headers || {});
+  if (ADMIN_TOKEN) headers['Authorization'] = 'Bearer ' + ADMIN_TOKEN;
+  return fetch(path, Object.assign({}, opts, { headers }));
+}
+function syncAdminState() {
+  $('adminState').textContent = ADMIN_TOKEN ? 'Token set.' : 'No token set - admin actions will be rejected if the server requires one.';
+}
+const QUALITY = {
+  '360':  {w: 640,  h: 360,  kbps: 800},
+  '720':  {w: 1280, h: 720,  kbps: 2500},
+  '1080': {w: 1920, h: 1080, kbps: 4500},
+};
+
+Theme.init('themeBtn');
+
+let pc = null, sessionUrl = null, facing = 'user';
+let camStream = null, outStream = null, audioCtx = null, speaker = null;
+let drawTimer = null, lastDraw = 0, statsTimer = null, wakeLock = null, wantLive = false, last = {t: 0, b: 0};
+let speakChain = Promise.resolve(), pending = 0;
+let previewCtx = null, previewSpeaker = null;     // local voice for testing when not live
+let lastReply = null;                             // last spoken reply, replayed by "Test voice"
+let avatarMinimized = false;                      // admin "minimize the character" control
+
+// The speaker actually in use right now (live: the mixed-into-stream one; otherwise the local preview
+// one). Kept as a function rather than a snapshot so an interrupt always reaches whichever is current.
+function getActiveSpeaker() { return speaker || previewSpeaker; }
+
+function log(m) { $('log').textContent = `[${new Date().toLocaleTimeString()}] ${m}\n` + $('log').textContent; }
+function setStatus(text, cls = '') { $('status').textContent = text; $('status').className = cls; }
+function cleanName() { return ($('name').value || '').trim().replace(/[^A-Za-z0-9_-]/g, '') || 'mystream'; }
+function setLiveUI(live) {
+  $('go').textContent = live ? 'Stop streaming' : 'Start streaming';
+  $('go').className = live ? 'live' : 'go';
+  $('name').disabled = live; $('quality').disabled = live;
+}
+
+// ================= avatar =================
+const rig = new AvatarRig({canvas: $('avatarCanvas')});
+rig.load()
+  .then(() => {
+    $('avatarState').textContent = 'ready (' + rig.version + ')' + (rig.fkOk ? '' : ' - old avatar.riv: arm/wave/pointing disabled');
+    log('avatar loaded, ' + rig.version + (rig.fkOk ? '' : ' | arm control OFF: use the avatar.riv from the v5 zip'));
+    setTimeout(() => { if (rig.legsClipped) { $('avatarState').textContent += ' - LEGS MASKED: old avatar.riv is being served (redeploy web/avatar.riv from v5.1+, then Ctrl+F5)'; log('LEGS MASKED: the loaded avatar.riv still cuts the legs off. Redeploy web/avatar.riv from the v5.1+ zip and hard-refresh.'); } else if (rig.legsClipped === false) log('legs: confirmed drawn (pixel check)'); }, 4500);
+    log('avatar.riv legs mask: ' + ({already: 'v5.1+ file (ok)', 'patched-in-memory': 'OLD file on the server - patched in memory (copy the new web/avatar.riv over it)', 'not-found': 'not found (a different .riv?)', disabled: 'disabled'}[rig.rivPatch] || rig.rivPatch));
+    log(rig.legsShown ? 'legs: shown (artboard extended below the hips)' + (rig.orchestraDriver && rig.orchestraDriver.legsOk ? ', leg IK driven' : ', but leg IK targets not found - leg gestures off') : 'legs: not shown (old behaviour)');
+    applyPointerToggles();
+  })
+  .catch(e => { $('avatarState').textContent = 'failed to load'; log('AVATAR ERROR: ' + e.message); });
+
+const motion = () => ({gesture: $('mGesture').checked, wave: $('mWave').checked});
+
+// While live, the avatar's voice is mixed into the stream. When not live it plays on this device
+// so you can test movement without streaming.
+function unlockPreviewAudio() {
+  if (!previewCtx) { const AC = window.AudioContext || window.webkitAudioContext; previewCtx = new AC(); }
+  if (previewCtx.state === 'suspended') previewCtx.resume().catch(() => {});
+}
+function getSpeaker() {
+  if (speaker) return speaker;
+  unlockPreviewAudio();
+  if (previewCtx.state === 'suspended') log('tap anywhere on this page once to allow sound');
+  if (!previewSpeaker) previewSpeaker = new Speaker({rig, ctx: previewCtx, destination: previewCtx.destination, motion});
+  return previewSpeaker;
+}
+['pointerdown', 'touchend', 'click', 'keydown'].forEach(ev => document.addEventListener(ev, unlockPreviewAudio, {passive: true}));
+
+// ---- mouse interaction: the avatar looks at the pointer and points at it ----
+// Both are optional and independent. The coordinates are the whole page mapped to -1..1, so the avatar
+// reacts to where you are on the screen, not only over the video. On a touch screen a drag does the same.
+function trackPointer(e) {
+  const x = (e.clientX / innerWidth) * 2 - 1, y = (e.clientY / innerHeight) * 2 - 1;
+  if (!rig.ready) return;
+  rig.lookAt(x, y);          // ignored by the rig when "follow with the eyes" is off
+  rig.pointAt(x, y);         // ignored by the rig when "point with the arm" is off
+}
+['pointermove', 'pointerdown'].forEach(ev => document.addEventListener(ev, trackPointer, {passive: true}));
+function applyPointerToggles() {
+  rig.setLooking($('mLook').checked);
+  rig.setPointing($('mPoint').checked);
+  if (rig.orchestra) rig.orchestra.enable('legs', $('mLegs').checked);
+}
+$('mLegs').onchange = applyPointerToggles;
+$('mLook').onchange = applyPointerToggles;
+$('mPoint').onchange = applyPointerToggles;
+
+// ---- gesture library: one button per gesture ----
+// cueOrchestra() plays a single gesture from avatar-orchestra.js's GESTURES table on its own; the wave/
+// head-gesture buttons above use the older, separate wave()/gesture() system and are unaffected by this.
+// Every named gesture also broadcasts to every connected viewer (POST /gesture) - the publisher's own
+// canvas above is a *local* preview of the exact same cue every viewer's browser plays via view.html.
+function broadcastGesture(name, side) {
+  adminFetch('gesture', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, side: side || 'R' }) })
+    .then(r => { if (r.status === 401) log('gesture not broadcast: admin token missing/invalid (set it under Admin access)'); })
+    .catch(e => log('gesture broadcast failed: ' + e.message));
+}
+function cueOrchestra(name) {
+  if (!rig.ready) return log('avatar not ready');
+  if (!rig.orchestra) return log('gesture library not loaded (check avatar-orchestra.js on the page)');
+  if (!rig.orchestra.cue(name)) log(`"${name}" skipped - the arm is busy with something higher-priority`);
+  broadcastGesture(name);
+}
+$('btGlasses').onclick   = () => cueOrchestra('glasses');
+$('btShocked').onclick   = () => cueOrchestra('surprise');
+$('btThinking').onclick  = () => cueOrchestra('thinking');
+$('btNod').onclick       = () => cueOrchestra('nod');
+$('btShake').onclick     = () => cueOrchestra('shake');
+$('btShrug').onclick     = () => cueOrchestra('shrug');
+$('btPresent').onclick   = () => cueOrchestra('present');
+$('btCelebrate').onclick = () => cueOrchestra('celebrate');
+$('btFoot').onclick      = () => cueOrchestra('footTap');
+$('btShift').onclick     = () => cueOrchestra('weightShift');
+$('btBounce').onclick    = () => cueOrchestra('bounce');
+$('btHop').onclick       = () => cueOrchestra('hop');
+$('btJump').onclick      = () => cueOrchestra('jump');
+$('btMarch').onclick     = () => cueOrchestra('march');
+$('btKick').onclick      = () => cueOrchestra('kick');
+$('btStomp').onclick     = () => { cueOrchestra('stomp'); camPunch(0.5); };
+$('btDance').onclick     = () => cueOrchestra('dance');
+$('btLean').onclick      = () => { if (!rig.ready) return log('avatar not ready'); rig.leanCue(); };
+
+// ---- keyword -> gesture, fired the moment a reply starts speaking ("insert into the script") ----
+// The avatar's own spoken reply is scanned for a handful of phrases; the first one that matches cues
+// the matching gesture at the same moment the reply's wave/head-gesture would start. Only the first
+// match in this list fires per reply, so at most one extra gesture plays per line. Turn it off with the
+// "Auto-play a matching gesture for keywords in replies" checkbox.
+const SPEECH_CUES = [
+  { gesture: 'glasses',  re: /\b(spec|specs|discount(ed)?|warrant(y|ies)|material)\b|\d+\s*%\s*off|\bpercent\s+off\b/i },
+  { gesture: 'lean',     re: /\b(secret|code|between\s+us|exclusive|just\s+for\s+you)\b|\bonly\b[^.!?]{0,60}\b(you|people|viewers|watching|stream)\b/i },
+  { gesture: 'surprise', re: /\b(sold\s+out|out\s+of\s+stock|units?\s+left|wow|whoa|no\s+way|can'?t\s+believe)\b/i },
+  { gesture: 'thinking', re: /(\?|let me think|good question|hmm)/i },
+  { gesture: 'celebrate', re: /\b(congrat(s|ulations)?|hooray|yay|woo-?hoo|let'?s\s+go|we\s+did\s+it)\b/i },
+  { gesture: 'dance',    re: /\b(party|dance|dancing|music\s+time)\b/i },
+  { gesture: 'footTap',  re: /\b(waiting|hurry\s+up|any\s+(second|moment)\s+now)\b/i },
+];
+function pickSpeechCue(text) { for (const c of SPEECH_CUES) if (c.re.test(text)) return c.gesture; return null; }
+function fireSpeechCue(text) {
+  if (!$('mCue').checked || !rig.ready) return;
+  const g = pickSpeechCue(text);
+  if (!g) return;
+  camPunch(0.7);
+  if (g === 'lean') rig.leanCue();
+  else if (rig.orchestra) rig.orchestra.cue(g);
+}
+
+function onReply(msg) {           // the server produced a spoken reply
+  if (!rig.ready) return;
+  if (talkStopped) return;        // "Stop talking" is on: drop this line instead of queueing it
+  const sp = getSpeaker(); sp.setMuted(voiceMuted);
+  pending++;
+  speakChain = speakChain.then(async () => {
+    try {
+      const [r, w] = await Promise.all([
+        fetch(`audio/${msg.id}`),
+        fetch(`audio/${msg.id}/words`).then(x => x.ok ? x.json() : { words: null }).catch(() => ({ words: null })),
+      ]);
+      if (!r.ok) throw new Error('audio HTTP ' + r.status);
+      lastReply = { bytes: await r.arrayBuffer(), text: msg.text, words: w.words || null };
+      if (!msg.ack) fireSpeechCue(lastReply.text);     // a quick "Hi!" ack isn't a reply cue
+      await sp.say(lastReply.bytes, lastReply.text, { words: lastReply.words, motion: { wave: !msg.baseline } });
+    } catch (e) { log('avatar speech failed: ' + e.message); rig.setViseme(0); }
+    finally {
+      pending--;
+      if (pending === 0 && $('mStop').checked) rig.stopSpeechMotion();     // nothing else queued: end the reply's movement
+    }
+  });
+}
+function setProviderBadge(mode) {
+  const badge = $('providerBadge');
+  const bucket = mode === 'rules' ? 'rules' : mode === 'claude' ? 'claude' : mode.startsWith('free:') ? 'free' : 'groq';
+  const label = mode === 'rules' ? 'Built-in rules' : mode === 'claude' ? 'Claude'
+    : mode === 'custom' ? 'Custom endpoint' : mode.startsWith('free:') ? `Free (${mode.slice(5)})` : mode === 'groq' ? 'Groq (fast reply)' : mode;
+  badge.className = 'stage-badge ' + bucket;
+  badge.textContent = label;
+}
+function onModeInfo(info) {
+  // Server sends this shape from GET /events "history": {mode, providers, loop}. providers() (llm.js)
+  // is {groq, claude, custom, free:[...]}. Kept tolerant of the plain string the very first version
+  // of this server used.
+  const mode = typeof info === 'string' ? (info === 'ai' ? 'claude' : 'rules') : (info.mode || 'rules');
+  setProviderBadge(mode);
+  const p = (info && info.providers) || {};
+  const chain = [p.custom && 'a custom endpoint', p.groq && 'Groq', p.claude && 'Claude', p.free && p.free.length && `free gateways (${p.free.join(', ')})`].filter(Boolean);
+  $('mode').textContent = chain.length
+    ? `Replies try: ${chain.join(' -> ')} -> built-in rules.`
+    : 'Replies use the free keyless gateways, falling back to simple built-in rules.';
+  if (info && typeof info.loop === 'boolean') $('loopToggle').checked = info.loop;
+  if (info && info.replies) { $('qReplies').value = info.replies; $('repliesModeSel').value = info.replies; }
+  if (info && typeof info.scriptProtect === 'boolean') $('scriptProtectToggle').checked = info.scriptProtect;
+  if (info && typeof info.voiceScript === 'boolean') $('scriptVoiceToggle').checked = info.voiceScript;
+  if (info && typeof info.voiceReplies === 'boolean') $('repliesVoiceToggle').checked = info.voiceReplies;
+}
+function onVoiceInfo(v) {
+  if (!v) return;
+  if (window.AvatarInternals && v.dialect) AvatarInternals.setDialect(v.dialect);
+  const en = $('voiceEn'), ar = $('voiceAr');
+  if (en && v.en) en.value = v.en;
+  if (ar && v.ar) ar.value = v.ar;
+}
+function onInterrupt() {
+  // Event-driven cutoff: a real comment just beat the baseline script. Kill whatever is currently
+  // playing on this page - audio stops immediately and the mouth snaps back to rest - so the reply
+  // that follows always wins the race, exactly like a human stopping mid-sentence.
+  const sp = getActiveSpeaker();
+  if (sp) sp.stop();
+  if (rig.ready) rig.setViseme(0);
+}
+const chat = new Chat({
+  log: $('chatlog'), name: $('chatname'), msg: $('chatmsg'), send: $('chatsend'), status: $('chatState'),
+  onReply,
+  onComment: () => { if (rig.ready && $('mComment').checked) rig.wave('comment'); },
+  onMode: onModeInfo,
+  onInterrupt,
+  onVoice: onVoiceInfo,
+  onPending: renderPending,
+});
+chat.init();
+
+// ================= voice picker =================
+(async function () {
+  try {
+    const r = await fetch('voices');
+    if (r.ok) { const j = await r.json(); onVoiceInfo(j.current); if (j.dialect && window.AvatarInternals) AvatarInternals.setDialect(j.dialect); }
+  } catch (e) { log('voices fetch failed: ' + e.message); }
+})();
+async function pushVoiceChoice() {
+  try {
+    await adminFetch('voice', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({en: $('voiceEn').value, ar: $('voiceAr').value}),
+    });
+  } catch (e) { log('voice save failed: ' + e.message); }
+}
+$('voiceEn').onchange = pushVoiceChoice;
+$('voiceAr').onchange = pushVoiceChoice;
+
+// ================= reference script editor =================
+let currentScriptLines = [];
+(async function () {
+  try {
+    const r = await fetch('script');
+    if (r.ok) {
+      const j = await r.json();
+      currentScriptLines = j.lines || [];
+      $('scriptText').value = currentScriptLines.join('\n');
+      $('personaText').value = j.persona || '';
+      $('loopToggle').checked = j.loop !== false;
+      if (typeof j.scriptProtect === 'boolean') $('scriptProtectToggle').checked = j.scriptProtect;
+      if (typeof j.voiceScript === 'boolean') $('scriptVoiceToggle').checked = j.voiceScript;
+      if (typeof j.voiceReplies === 'boolean') $('repliesVoiceToggle').checked = j.voiceReplies;
+      if (j.replies) $('repliesModeSel').value = j.replies;
+    }
+  } catch (e) { log('script fetch failed: ' + e.message); }
+})();
+// "Review changes…" moderates the script topic: nothing is sent to the server until the publisher sees
+// a plain diff of old -> new lines and explicitly clicks Apply. Cancel discards the edit box back to what
+// is currently live. This is the "acceptance to change it" step for the reference script.
+function diffLines(oldLines, newLines) {
+  const out = [];
+  const max = Math.max(oldLines.length, newLines.length);
+  for (let i = 0; i < max; i++) {
+    const o = oldLines[i], n = newLines[i];
+    if (o === n) out.push('  ' + (n ?? o));
+    else if (o === undefined) out.push('+ ' + n);
+    else if (n === undefined) out.push('- ' + o);
+    else out.push('- ' + o + '\n+ ' + n);
+  }
+  return out.join('\n');
+}
+$('scriptSave').onclick = () => {
+  const lines = $('scriptText').value.split('\n').map(s => s.trim()).filter(Boolean);
+  if (!lines.length) { $('scriptNote').textContent = 'Add at least one line first.'; return; }
+  $('scriptDiff').textContent = diffLines(currentScriptLines, lines) || '(no change)';
+  $('scriptConfirm').hidden = false;
+  $('scriptNote').textContent = '';
+};
+$('scriptCancel').onclick = () => { $('scriptConfirm').hidden = true; };
+$('scriptApply').onclick = async () => {
+  const lines = $('scriptText').value.split('\n').map(s => s.trim()).filter(Boolean);
+  try {
+    const r = await adminFetch('script', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({lines, persona: $('personaText').value, loop: $('loopToggle').checked}),
+    });
+    if (r.ok) { currentScriptLines = lines; $('scriptNote').textContent = 'Applied. The avatar will use it from the next idle line onward.'; }
+    else $('scriptNote').textContent = 'Save failed (HTTP ' + r.status + ')';
+  } catch (e) { $('scriptNote').textContent = 'Save failed: ' + e.message; }
+  $('scriptConfirm').hidden = true;
+};
+$('loopToggle').onchange = () => {
+  adminFetch('script', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({loop: $('loopToggle').checked})}).catch(() => {});
+};
+
+// ================= moderation & voice =================
+const postScript = o => adminFetch('script', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(o)}).catch(() => {});
+$('scriptVoiceToggle').onchange = () => postScript({voiceScript: $('scriptVoiceToggle').checked});
+$('scriptProtectToggle').onchange = () => postScript({scriptProtect: $('scriptProtectToggle').checked});
+$('repliesVoiceToggle').onchange = () => postScript({voiceReplies: $('repliesVoiceToggle').checked});
+$('repliesModeSel').onchange = () => { postScript({replies: $('repliesModeSel').value}); $('qReplies').value = $('repliesModeSel').value; };
+
+// Comments held in memory for the publisher to verify (repliesMode 'review', or a script-protected
+// interrupt) - approve to have the avatar actually speak/answer it, reject to drop it silently.
+function renderPending(items) {
+  const list = $('pendingList');
+  list.textContent = '';
+  $('pendingState').textContent = items.length ? items.length + ' waiting' : 'nothing waiting';
+  for (const it of items) {
+    const row = document.createElement('div');
+    row.className = 'pending-row';
+    const who = document.createElement('b'); who.textContent = it.name + ': ';
+    const edit = document.createElement('input'); edit.value = it.text; edit.setAttribute('aria-label', 'Reply text');
+    const why = document.createElement('span'); why.className = 'note';
+    why.textContent = it.reason === 'script-protect' ? ' (arrived mid-script)' : ' (held for review)';
+    const btns = document.createElement('div'); btns.className = 'row';
+    const okBtn = document.createElement('button'); okBtn.type = 'button'; okBtn.className = 'go'; okBtn.textContent = 'Approve & speak';
+    const noBtn = document.createElement('button'); noBtn.type = 'button'; noBtn.textContent = 'Reject';
+    okBtn.onclick = async () => {
+      okBtn.disabled = true; noBtn.disabled = true;
+      try { await adminFetch('pending/' + it.id + '/approve', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({text: edit.value})}); }
+      catch (e) { log('approve failed: ' + e.message); okBtn.disabled = false; noBtn.disabled = false; }
+    };
+    noBtn.onclick = async () => {
+      okBtn.disabled = true; noBtn.disabled = true;
+      try { await adminFetch('pending/' + it.id + '/reject', {method: 'POST'}); }
+      catch (e) { log('reject failed: ' + e.message); okBtn.disabled = false; noBtn.disabled = false; }
+    };
+    btns.append(okBtn, noBtn);
+    row.append(who, why, document.createElement('br'), edit, btns);
+    list.appendChild(row);
+  }
+}
+(async function () {
+  try { const r = await fetch('pending'); if (r.ok) renderPending((await r.json()).items || []); }
+  catch (e) { log('pending fetch failed: ' + e.message); }
+})();
+
+// ================= camera + compositing =================
+const stage = $('stage'), cam = $('cam'), sctx = stage.getContext('2d');
+const stageStart = performance.now();
+
+// A "live" background for the centered layout: a soft gradient plus slowly-drifting light blobs,
+// recomputed every frame from the clock, so it visibly moves rather than sitting there as a static image.
+const BG_THEMES = {
+  aurora:   ['#1b1440', '#4a2f86', '#1a355e'],
+  midnight: ['#0a0c1c', '#141a33', '#050611'],
+  sunset:   ['#3a1240', '#a3315a', '#e08a3c'],
+  studio:   ['#12151a', '#262c36', '#0b0d10'],
+  neon:     ['#08041a', '#2a0b5e', '#0b1d4a'],
+  bokeh:    ['#0d1b2a', '#1b3a5c', '#3a1c5c'],
+};
+let bgPulse = 0;                                   // 0..1, eased "the avatar is talking" level - backgrounds react to it
+const PARTS = Array.from({length: 46}, () => ({x: Math.random(), y: Math.random(), r: 0.006 + Math.random() * 0.02, sp: 0.01 + Math.random() * 0.03, ph: Math.random() * 6, hue: 180 + Math.random() * 120}));
+function drawStageBackground(ctx, W, H, t, themeName) {
+  const c = BG_THEMES[themeName] || BG_THEMES.aurora, P = bgPulse;
+  const g = ctx.createLinearGradient(0, 0, W, H);
+  g.addColorStop(0, c[0]); g.addColorStop(0.55, c[1]); g.addColorStop(1, c[2]);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  for (let i = 0; i < 3; i++) {                    // drifting light blobs (swell a little while talking)
+    const ang = t * (0.12 + i * 0.05) + i * 2.4;
+    const bx = W * (0.5 + 0.38 * Math.cos(ang)), by = H * (0.48 + 0.30 * Math.sin(ang * 1.3));
+    const r = Math.min(W, H) * (0.32 + 0.06 * Math.sin(t * 0.35 + i) + 0.05 * P);
+    const rg = ctx.createRadialGradient(bx, by, 0, bx, by, r);
+    rg.addColorStop(0, `rgba(255,255,255,${0.10 + 0.06 * P})`); rg.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = rg; ctx.fillRect(0, 0, W, H);
+  }
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  if (themeName === 'aurora') {                    // flowing light ribbons
+    for (let k = 0; k < 3; k++) {
+      const hue = 160 + k * 55 + 20 * Math.sin(t * 0.2), y0 = H * (0.25 + 0.17 * k);
+      const rb = ctx.createLinearGradient(0, y0 - H * 0.2, 0, y0 + H * 0.2);
+      rb.addColorStop(0, 'hsla(' + hue + ',90%,60%,0)'); rb.addColorStop(0.5, `hsla(${hue},90%,60%,${0.16 + 0.12 * P})`); rb.addColorStop(1, 'hsla(' + hue + ',90%,60%,0)');
+      ctx.fillStyle = rb; ctx.beginPath(); ctx.moveTo(0, H);
+      for (let x = 0; x <= W; x += 20) ctx.lineTo(x, y0 + Math.sin(x / W * 5 + t * (0.5 + k * 0.2) + k) * H * (0.07 + 0.04 * P));
+      ctx.lineTo(W, H); ctx.closePath(); ctx.fill();
+    }
+  } else if (themeName === 'neon') {               // synthwave sun + scrolling perspective floor grid
+    const hz = H * 0.62, sun = ctx.createRadialGradient(W / 2, hz, 0, W / 2, hz, H * (0.34 + 0.04 * P));
+    sun.addColorStop(0, 'rgba(255,90,200,0.55)'); sun.addColorStop(1, 'rgba(255,90,200,0)');
+    ctx.fillStyle = sun; ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = `rgba(90,220,255,${0.35 + 0.3 * P})`; ctx.lineWidth = 2;
+    for (let i = -14; i <= 14; i++) { ctx.beginPath(); ctx.moveTo(W / 2 + i * 12, hz); ctx.lineTo(W / 2 + i * W * 0.14, H); ctx.stroke(); }
+    for (let i = 0; i < 10; i++) { const f = ((i + (t * 0.35) % 1) / 10), y = hz + (H - hz) * f * f; ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+  } else if (themeName === 'bokeh') {              // floating glow orbs that brighten with speech
+    for (const q of PARTS) {
+      const y = ((q.y - t * q.sp) % 1 + 1) % 1, x = q.x + Math.sin(t * 0.3 + q.ph) * 0.03, r = H * q.r * (1 + 0.6 * P);
+      const og = ctx.createRadialGradient(x * W, y * H, 0, x * W, y * H, r * 3);
+      og.addColorStop(0, `hsla(${q.hue},90%,70%,${0.35 + 0.3 * P})`); og.addColorStop(1, 'hsla(' + q.hue + ',90%,70%,0)');
+      ctx.fillStyle = og; ctx.fillRect(x * W - r * 3, y * H - r * 3, r * 6, r * 6);
+    }
+  }
+  ctx.restore();
+  const floor = ctx.createRadialGradient(W / 2, H * 1.02, 0, W / 2, H * 1.02, W * 0.55);   // stage-floor glow
+  floor.addColorStop(0, 'rgba(255,255,255,0.14)'); floor.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = floor; ctx.fillRect(0, 0, W, H);
+}
+// Legs default to ON every time this page loads. (Previously this read a stale 'showLegs' value back out of
+// localStorage, so a single accidental toggle-off would silently stay off forever - with no visible reminder,
+// since the dock button itself is hidden unless you're in "Full body" + "Center stage" mode - and every viewer
+// would see the character faded out at the thighs. The toggle below still works live for the current session.)
+let showLegs = true, legsTmp = null;
+function roundRectPath(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+// Framing knobs (fractions of stage height). HALF.cut = how far down the artboard the crop is (0.55 = waist),
+// HALF.desk = where the desk top sits, HALF.fill = head-to-waist height on screen. FULL.fill = full body height.
+// ---- cinematic director: a virtual camera (zoom/pan/roll springs) that picks a new shot every few
+// seconds while the avatar talks (wide -> medium -> close-up), pushes in on emphasis, drifts like a handheld
+// camera and pulls back to a wide when idle. Close-ups also trigger the avatar's own lean-in.
+const spr = () => ({x: 0, v: 0});
+const CINE = {z: {x: 1, v: 0}, x: spr(), y: spr(), r: spr(), next: 0, shot: 0, punch: 0};
+const CINE_LEVEL = {off: 0, subtle: 0.5, cinematic: 1, dramatic: 1.7};
+const SHOTS = [{z: 1.00, x: 0, y: 0}, {z: 1.10, x: -0.03, y: 0.01}, {z: 1.10, x: 0.03, y: 0.01}, {z: 1.22, x: 0, y: 0.03}, {z: 1.36, x: 0.015, y: 0.06}];
+function cs(s, target, dt, w) { const a = -2 * w * s.v - w * w * (s.x - target); s.v += a * dt; s.x += s.v * dt; }
+function camPunch(a) { CINE.punch = Math.min(1, CINE.punch + (a || 0.6)); }
+function cineUpdate(dt, t, speaking, lean, half) {
+  const L = CINE_LEVEL[$('qCine').value] || 0;
+  let tz = 1, tx = 0, ty = 0, tr = 0;
+  if (L) {
+    if (speaking) {
+      if (t >= CINE.next) {                              // new shot: never the same twice, favour gentle moves
+        let i; do { i = Math.floor(Math.random() * SHOTS.length); } while (i === CINE.shot && SHOTS.length > 1);
+        if (i === 4 && Math.random() < 0.4) i = 2;
+        CINE.shot = i; CINE.next = t + 3 + Math.random() * 3.5;
+        if (rig.ready) { if (i >= 3) rig.leanCue(); else rig.stopLean(); }
+      }
+    } else if (CINE.shot !== 0) { CINE.shot = 0; CINE.next = 0; if (rig.ready) rig.stopLean(); }
+    const S = SHOTS[CINE.shot];
+    tz = 1 + (S.z - 1) * L + 0.04 * L * (0.5 + 0.5 * Math.sin(t * 0.35)) + 0.10 * L * CINE.punch;   // slow breathe + punch-in
+    tx = S.x * L + 0.006 * L * Math.sin(t * 0.6); ty = (half ? S.y * 0.6 : S.y) * L + 0.004 * L * Math.sin(t * 0.8 + 1);
+    tr = L * (0.35 * Math.sin(t * 0.55) + 0.2 * Math.sin(t * 1.7));                                // handheld roll (degrees)
+  }
+  CINE.punch *= Math.exp(-dt * 1.6);
+  const w = L ? 2.2 : 6;                                  // low frequency = slow, floaty, cinematic moves
+  cs(CINE.z, tz, dt, w); cs(CINE.x, tx, dt, w); cs(CINE.y, ty, dt, w); cs(CINE.r, tr, dt, w * 1.3);
+}
+function drawVignette(ctx, W, H) {
+  const L = CINE_LEVEL[$('qCine').value] || 0; if (!L) return;
+  const g = ctx.createRadialGradient(W / 2, H * 0.45, H * 0.45, W / 2, H * 0.5, H * 1.0);
+  g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, `rgba(0,0,0,${0.32 + 0.1 * Math.min(1, CINE.z.x - 1) * 3})`);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+}
+// FULL.fill = top of the artboard -> soles of the shoes, as a fraction of the stage height; FULL.floor = where the soles
+// stand (the floor line + shadow are drawn there). HALF.cut is measured on the artboard as authored (waist), not on the
+// taller legs-included artboard.
+// HALF: cutY = artboard y (units) where the picture is cut - 700 is the belt line (hips are at ~703) - and desk = where that
+// cut sits on the stage; fill = artboard top -> cut, as a fraction of the stage height.
+// FULL.legsCutY / legsFade = where the picture is cut (and how softly) when the Legs toggle is off.
+const HALF = {cutY: 700, desk: 0.82, fill: 0.78}, FULL = {fill: 0.86, floor: 0.965, shadow: 0.34, legsCutY: 770, legsFade: 45};
+function drawFrame() {
+  const centered = $('stageMode').value === 'center';
+  const haveCam = !!camStream && cam.readyState >= 2 && cam.videoWidth > 0;
+  const vw = centered ? 1280 : (haveCam ? cam.videoWidth : 1280);
+  const vh = centered ? 720 : (haveCam ? cam.videoHeight : 720);
+  if (stage.width !== vw || stage.height !== vh) { stage.width = vw; stage.height = vh; }
+  const W = stage.width, H = stage.height;
+  const lean = rig.ready ? rig.leanAmount : 0;          // 0..1: "lean in" - see avatar.js LEAN
+  const t = (performance.now() - stageStart) / 1000;
+  bgPulse += ((rig.ready && rig.speaking ? 1 : 0) - bgPulse) * 0.08;
+  cineUpdate(Math.min(0.05, (performance.now() - (drawFrame.last || performance.now())) / 1000), t, rig.ready && rig.speaking, lean, $('frameMode').value === 'half'); drawFrame.last = performance.now();
+
+  if (centered) {
+    sctx.save();                                          // background moves LESS than the character = depth (parallax)
+    const bz = 1 + (CINE.z.x - 1) * 0.35;
+    sctx.translate(W / 2 - CINE.x.x * W * 0.3, H / 2 - CINE.y.x * H * 0.3); sctx.scale(bz, bz); sctx.translate(-W / 2, -H / 2);
+    const bl = Math.max(lean * AvatarInternals.LEAN.blur, (CINE.z.x - 1) * 7);
+    if (bl > 0.4) sctx.filter = `blur(${bl.toFixed(1)}px)`;
+    drawStageBackground(sctx, W, H, t, $('bgTheme').value);
+    sctx.filter = 'none'; sctx.restore();
+    if (haveCam && $('camPip').checked) {               // optional small camera-in-corner, stage stays the focus
+      const pw = W * 0.22, ph = pw * ((cam.videoHeight / cam.videoWidth) || 9 / 16);
+      sctx.save();
+      roundRectPath(sctx, W - pw - 18, 18, pw, ph, 12); sctx.clip();
+      sctx.drawImage(cam, W - pw - 18, 18, pw, ph);
+      sctx.restore();
+    }
+  } else if (haveCam) {
+    if (lean > 0.01) {                                  // soften the background a little as the avatar leans in
+      sctx.filter = `blur(${(lean * AvatarInternals.LEAN.blur).toFixed(1)}px)`;
+      sctx.drawImage(cam, 0, 0, W, H);
+      sctx.filter = 'none';
+    } else {
+      sctx.drawImage(cam, 0, 0, W, H);
+    }
+  } else {                                     // no camera: dark background so the avatar can be tested
+    sctx.fillStyle = '#10141a'; sctx.fillRect(0, 0, W, H);
+    sctx.fillStyle = '#6b7788'; sctx.font = `${Math.round(H / 24)}px system-ui, sans-serif`;
+    sctx.textAlign = 'left'; sctx.fillText('Camera off - avatar preview', W * 0.03, H * 0.06);
+  }
+
+  if (rig.ready) {
+    if (centered && !avatarMinimized) {
+      // main focus of the stage. rig.frac says where the character really sits inside its canvas
+      // (the canvas has uneven side padding), so we centre the CHARACTER, not the canvas.
+      const F = rig.frac, cw = rig.canvas.width, ch = rig.canvas.height, half = $('frameMode').value === 'half';
+      const size = $('asize').value / 66, k = 1 + AvatarInternals.LEAN.scale * lean;
+      sctx.save();                                       // virtual camera: zoom/pan/roll about the head
+      { const fx = W / 2, fy = H * (half ? 0.40 : 0.28), z = CINE.z.x;
+        sctx.translate(fx + CINE.x.x * W, fy + CINE.y.x * H); sctx.rotate(CINE.r.x * Math.PI / 180); sctx.scale(z, z); sctx.translate(-fx, -fy); }
+      if (half) {          // bust shot: crop at the waist, desk covers the cut (like a streamer at a desk)
+        const cut = F.at(HALF.cutY), deskY = H * HALF.desk;
+        const dh = H * HALF.fill * size * k / (cut - F.top);            // canvas height so that head->waist fills HALF.fill of H
+        const dw = dh * cw / ch, x = W / 2 - F.cx * dw, y = deskY - cut * dh;
+        sctx.drawImage(rig.canvas, 0, 0, cw, Math.round(cut * ch), x, y, dw, cut * dh);
+        const dg = sctx.createLinearGradient(0, deskY, 0, H); dg.addColorStop(0, '#0a0c12'); dg.addColorStop(1, '#05060a');
+        sctx.fillStyle = dg; sctx.fillRect(-W * 0.3, deskY, W * 1.6, H * 2);
+        sctx.fillStyle = 'rgba(255,255,255,0.18)'; sctx.fillRect(-W * 0.3, deskY, W * 1.6, 2);
+      } else {             // full body: head to shoes, centred, standing on a floor line so arm/leg gestures read clearly
+        const dh = H * FULL.fill * size * k / (F.sole - F.top);
+        const dw = dh * cw / ch, x = W / 2 - F.cx * dw, y = H * FULL.floor - F.sole * dh;
+        // contact shadow under the shoes; it shrinks and fades while the character is in the air (jump / hop)
+        if (showLegs) { const air = rig.orchestra ? rig.orchestra.airborne : 0, unit = (rig.unitPx || 1) * dh / ch;      // stage px per artboard unit
+          const lift = Math.min(0.6, air / 60), sw = 300 * unit * (1 - 0.35 * lift), sh = sw * 0.13, sy = H * FULL.floor;
+          const g = sctx.createRadialGradient(W / 2, sy, 0, W / 2, sy, sw / 2);
+          g.addColorStop(0, 'rgba(0,0,0,' + (FULL.shadow * (1 - lift)).toFixed(3) + ')'); g.addColorStop(1, 'rgba(0,0,0,0)');
+          sctx.save(); sctx.translate(0, sy); sctx.scale(1, sh / (sw / 2)); sctx.translate(0, -sy); sctx.fillStyle = g;
+          sctx.beginPath(); sctx.arc(W / 2, sy, sw / 2, 0, Math.PI * 2); sctx.fill(); sctx.restore(); }
+        if (showLegs) sctx.drawImage(rig.canvas, x, y, dw, dh);
+        else {           // Legs toggle off: the picture ends at the thighs and fades out instead of being cut with a knife
+          const srcH = Math.round(F.at(FULL.legsCutY) * ch), fade = Math.round(FULL.legsFade * rig.unitPx);
+          legsTmp = legsTmp || document.createElement('canvas');
+          if (legsTmp.width !== cw || legsTmp.height !== srcH) { legsTmp.width = cw; legsTmp.height = srcH; }
+          const t = legsTmp.getContext('2d'); t.globalCompositeOperation = 'source-over'; t.clearRect(0, 0, cw, srcH);
+          t.drawImage(rig.canvas, 0, 0, cw, srcH, 0, 0, cw, srcH);
+          const lg = t.createLinearGradient(0, srcH - fade, 0, srcH); lg.addColorStop(0, 'rgba(0,0,0,0)'); lg.addColorStop(1, 'rgba(0,0,0,1)');
+          t.globalCompositeOperation = 'destination-out'; t.fillStyle = lg; t.fillRect(0, srcH - fade, cw, fade);
+          sctx.drawImage(legsTmp, 0, 0, cw, srcH, x, y, dw, srcH * dh / ch);
+        }
+      }
+      sctx.restore();
+      drawVignette(sctx, W, H);
+    } else {
+      // camera-corner layout, or the admin has minimized the character to a small badge
+      const pos = avatarMinimized ? 'right' : $('apos').value;
+      if (pos !== 'off') {
+        const sizePct = avatarMinimized ? 18 : $('asize').value;
+        const ah = H * (sizePct / 100) * (1 + AvatarInternals.LEAN.scale * lean);
+        const aw = ah * (rig.canvas.width / rig.canvas.height);
+        const margin = W * 0.02;
+        sctx.drawImage(rig.canvas, pos === 'right' ? W - aw - margin : margin, H - ah, aw, ah);
+      }
+    }
+  }
+}
+function startDrawing() {
+  stopDrawing();
+  drawTimer = setInterval(drawFrame, 1000 / 30);      // timer, not rAF: keeps running a bit longer when the tab is dimmed
+}
+function stopDrawing() { clearInterval(drawTimer); drawTimer = null; }
+startDrawing();                                       // preview runs from page load
+
+// ---- admin dock: stage mode + minimize (the background theme <select> writes straight into drawFrame) ----
+function syncDock() {
+  $('dockStageMode').textContent = $('stageMode').value === 'center' ? '🎬 Center stage' : '📷 Camera corner';
+  $('dockStageMode').classList.toggle('active', $('stageMode').value === 'center');
+  $('dockMinimize').textContent = avatarMinimized ? '⤢ Restore' : '⤡ Minimize';
+  $('dockMinimize').classList.toggle('active', avatarMinimized);
+  $('bgTheme').style.display = $('frameMode').style.display = $('stageMode').value === 'center' ? '' : 'none';
+  $('dockLegs').textContent = showLegs ? '🦵 Legs: on' : '🦵 Legs: off';
+  $('dockLegs').classList.toggle('active', showLegs);
+  $('dockLegs').style.display = ($('stageMode').value === 'center' && $('frameMode').value === 'full') ? '' : 'none';
+}
+$('dockLegs').onclick = () => { showLegs = !showLegs; syncDock(); };   // session-only now, see note above
+$('frameMode').addEventListener('change', () => { syncDock(); broadcastMotion(); });
+$('dockStageMode').onclick = () => { $('stageMode').value = $('stageMode').value === 'center' ? 'camera' : 'center'; syncDock(); broadcastMotion(); };
+$('stageMode').onchange = () => { syncDock(); broadcastMotion(); };
+// Live background + layout, broadcast to every connected viewer (POST /background, /motion) so
+// view.html's locally-rendered avatar/background stay in sync with what the publisher picks here -
+// the publisher's own canvas above already shows the same theme locally, this just fans it out.
+$('bgTheme').addEventListener('change', () => {
+  adminFetch('background', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ theme: $('bgTheme').value }) })
+    .then(r => { if (r.status === 401) log('background not broadcast: admin token missing/invalid'); })
+    .catch(e => log('background broadcast failed: ' + e.message));
+});
+let motionDebounce = null;
+function broadcastMotion() {
+  clearTimeout(motionDebounce);
+  motionDebounce = setTimeout(() => {
+    adminFetch('motion', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ frameMode: $('frameMode').value, stageMode: $('stageMode').value, size: Number($('asize').value) }),
+    }).then(r => { if (r.status === 401) log('motion not broadcast: admin token missing/invalid'); })
+      .catch(e => log('motion broadcast failed: ' + e.message));
+  }, 150);
+}
+$('asize').addEventListener('change', broadcastMotion);
+// ---- quick bar: talk loop, reply mode, mutes, camera ----
+let voiceMuted = false;
+let talkStopped = false;          // "Stop talking": holds the avatar silent until toggled back on
+const post = o => adminFetch('script', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(o)}).catch(() => {});
+function syncQ() {
+  const on = $('loopToggle').checked;
+  $('qTalk').textContent = on ? '🗣 Talk: ON' : '😶 Idle (no talking)'; $('qTalk').classList.toggle('on', on);
+  $('qStop').textContent = talkStopped ? '🚫 Talking stopped' : '🗯 Stop talking'; $('qStop').classList.toggle('off', talkStopped);
+  $('qMute').textContent = voiceMuted ? '🔇 Voice muted' : '🔊 Voice'; $('qMute').classList.toggle('off', voiceMuted);
+  const mic = camStream && camStream.getAudioTracks()[0]; const micOff = !!(mic && !mic.enabled);
+  $('qMic').textContent = micOff ? '🎙 Mic muted' : '🎙 Mic'; $('qMic').classList.toggle('off', micOff);
+}
+$('qTalk').onclick = () => {
+  $('loopToggle').checked = !$('loopToggle').checked; $('loopToggle').onchange();
+  if (!$('loopToggle').checked) { try { onInterrupt(); } catch (e) {} }        // idle now: cut the current script line off too
+  syncQ();
+};
+$('qStop').onclick = () => {
+  talkStopped = !talkStopped;
+  if (talkStopped) {
+    try { onInterrupt(); } catch (e) {}        // cut off whatever line is playing right now
+    // also stop the baseline script loop server-side, so it stops generating/queuing new lines
+    // entirely instead of just going unheard - otherwise it keeps piling into the comments log.
+    if ($('loopToggle').checked) { $('loopToggle').checked = false; $('loopToggle').onchange(); }
+  }
+  // Global switch: POST /speech/pause|resume cuts every connected viewer's audio at once (not just this
+  // page's local preview) and, while paused, funnels comments into the moderation queue instead of
+  // speaking them - see chat/server.js's `speechPaused`.
+  adminFetch('speech/' + (talkStopped ? 'pause' : 'resume'), { method: 'POST' })
+    .then(r => { if (r.status === 401) log('speech stop not broadcast: admin token missing/invalid'); })
+    .catch(e => log('speech stop broadcast failed: ' + e.message));
+  syncQ();
+};
+$('qReplies').onchange = () => { post({replies: $('qReplies').value}); $('repliesModeSel').value = $('qReplies').value; };
+$('qMute').onclick = () => { voiceMuted = !voiceMuted; [speaker, previewSpeaker].forEach(s => s && s.setMuted(voiceMuted)); syncQ(); };
+$('qMic').onclick = () => { const t = camStream && camStream.getAudioTracks()[0]; if (t) t.enabled = !t.enabled; syncQ(); };
+$('qIn').onclick = () => { if (rig.ready) rig.leanCue(); camPunch(1); };
+$('qOut').onclick = () => { if (rig.ready) rig.stopLean(); CINE.punch = 0; };
+setInterval(syncQ, 600); syncQ();
+$('dockMinimize').onclick = () => { avatarMinimized = !avatarMinimized; syncDock(); };
+syncDock();
+
+// ---- admin token input + a live queue/pending readout (GET /state) ----
+$('adminTokenInput').value = ADMIN_TOKEN;
+$('adminTokenInput').addEventListener('change', () => {
+  ADMIN_TOKEN = $('adminTokenInput').value.trim();
+  try { localStorage.setItem('adminToken', ADMIN_TOKEN); } catch (e) {}
+  syncAdminState();
+});
+syncAdminState();
+async function pollState() {
+  try {
+    const r = await adminFetch('state');
+    if (r.status === 401) { $('queueState').textContent = 'Queue/status hidden: set the admin token above to see it.'; return; }
+    if (!r.ok) return;
+    const s = await r.json();
+    $('queueState').textContent = `Queue: ${s.queueLength} waiting (${s.queuedBaseline} script) · `
+      + `${s.speaking ? 'speaking now' : s.busy ? 'busy' : 'idle'} · ${s.connectedViewers} viewer(s) connected · `
+      + `speech ${s.speechPaused ? 'PAUSED' : 'live'} · background: ${s.background}`;
+  } catch (e) { /* quiet - this is a nice-to-have readout, not core functionality */ }
+}
+setInterval(pollState, 4000); pollState();
+
+function videoConstraints() {
+  const q = QUALITY[$('quality').value];
+  return {facingMode: {ideal: facing}, width: {ideal: q.w}, height: {ideal: q.h}, frameRate: {ideal: 30, max: 30}};
+}
+
+async function startCapture() {
+  stopCapture();
+  camStream = await navigator.mediaDevices.getUserMedia({
+    video: videoConstraints(),
+    audio: {echoCancellation: true, noiseSuppression: true, autoGainControl: true},
+  });
+  const vt = camStream.getVideoTracks()[0], s = vt.getSettings();
+  log(`camera: ${s.width}x${s.height} @ ${Math.round(s.frameRate || 0)}fps (${vt.label})`);
+
+  cam.srcObject = new MediaStream([vt]);
+  await cam.play();
+  await new Promise(r => { if (cam.videoWidth) r(); else cam.addEventListener('loadedmetadata', r, {once: true}); });
+  stage.width = cam.videoWidth; stage.height = cam.videoHeight;
+  drawFrame(); startDrawing();
+
+  // audio: microphone + avatar voice -> one track
+  const AC = window.AudioContext || window.webkitAudioContext;
+  audioCtx = new AC();
+  await audioCtx.resume();
+  const dest = audioCtx.createMediaStreamDestination();
+  audioCtx.createMediaStreamSource(new MediaStream(camStream.getAudioTracks())).connect(dest);
+  speaker = new Speaker({rig, ctx: audioCtx, destination: dest, monitor: () => $('monitor').checked, motion});
+
+  outStream = new MediaStream([stage.captureStream(30).getVideoTracks()[0], dest.stream.getAudioTracks()[0]]);
+}
+
+function stopCapture() {
+  if (camStream) { camStream.getTracks().forEach(t => t.stop()); camStream = null; }
+  if (outStream) { outStream.getTracks().forEach(t => t.stop()); outStream = null; }
+  if (audioCtx) { audioCtx.close().catch(() => {}); audioCtx = null; }
+  speaker = null; rig.setViseme(0); rig.stopMotion();
+  cam.srcObject = null;
+}
+
+// ================= WHIP =================
+function waitIce(p, ms = 3000) {
+  return new Promise(resolve => {
+    if (p.iceGatheringState === 'complete') return resolve();
+    const done = () => { p.removeEventListener('icegatheringstatechange', check); clearTimeout(timer); resolve(); };
+    const check = () => { if (p.iceGatheringState === 'complete') done(); };
+    const timer = setTimeout(done, ms);
+    p.addEventListener('icegatheringstatechange', check);
+  });
+}
+function preferH264(transceiver) {           // so RTSP/HLS viewers also work; falls back silently
+  try {
+    const caps = RTCRtpSender.getCapabilities('video');
+    if (!caps || !transceiver.setCodecPreferences) return;
+    const h264 = caps.codecs.filter(c => c.mimeType === 'video/H264');
+    if (!h264.length) return;
+    transceiver.setCodecPreferences([...h264, ...caps.codecs.filter(c => c.mimeType !== 'video/H264')]);
+  } catch (e) { log('codec preference skipped: ' + e.message); }
+}
+
+async function publish() {
+  const endpoint = `${location.origin}/${cleanName()}/whip`;
+  const q = QUALITY[$('quality').value];
+  const myPc = new RTCPeerConnection({iceServers: ICE_SERVERS, bundlePolicy: 'max-bundle'});
+  pc = myPc;
+
+  for (const track of outStream.getTracks()) {
+    const tr = myPc.addTransceiver(track, {direction: 'sendonly', streams: [outStream]});
+    if (track.kind === 'video') preferH264(tr);
+  }
+  myPc.onconnectionstatechange = () => {
+    if (pc !== myPc) return;
+    const s = myPc.connectionState;
+    log('connection: ' + s);
+    if (s === 'connected') { setStatus('● LIVE', 'live'); startStats(); }
+    else if (s === 'disconnected') setStatus('Connection unstable…', 'warn');
+    else if (s === 'failed' || s === 'closed') onDropped();
+  };
+
+  await myPc.setLocalDescription(await myPc.createOffer());
+  await waitIce(myPc);
+  log('POST ' + endpoint);
+  const res = await fetch(endpoint, {method: 'POST', headers: {'Content-Type': 'application/sdp'}, body: myPc.localDescription.sdp});
+  if (res.status !== 201) throw new Error(`WHIP failed: HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
+  const loc = res.headers.get('Location');
+  sessionUrl = loc ? new URL(loc, endpoint).href : null;
+  await myPc.setRemoteDescription({type: 'answer', sdp: await res.text()});
+
+  try {
+    const snd = myPc.getSenders().find(s => s.track && s.track.kind === 'video');
+    const p = snd.getParameters();
+    if (!p.encodings || !p.encodings.length) p.encodings = [{}];
+    p.encodings[0].maxBitrate = q.kbps * 1000;
+    await snd.setParameters(p);
+  } catch (e) { log('bitrate cap skipped: ' + e.message); }
+}
+
+async function teardownPc() {
+  stopStats();
+  const p = pc; pc = null;
+  if (sessionUrl) { try { await fetch(sessionUrl, {method: 'DELETE'}); } catch {} sessionUrl = null; }
+  if (p) { p.onconnectionstatechange = null; p.close(); }
+}
+
+async function onDropped() {
+  if (!wantLive) return;
+  setStatus('Connection lost – retrying…', 'warn');
+  log('dropped; retrying in 2s');
+  await teardownPc();
+  setTimeout(async () => {
+    if (!wantLive) return;
+    try {
+      const dead = !camStream || camStream.getTracks().some(t => t.readyState === 'ended');
+      if (dead) await startCapture();
+      await publish();
+    } catch (e) { log('retry failed: ' + e.message); onDropped(); }
+  }, 2000);
+}
+
+async function stopLive(keepMessage = false) {
+  wantLive = false;
+  await teardownPc();
+  stopCapture();
+  releaseWakeLock();
+  setLiveUI(false);
+  $('stats').textContent = '';
+  if (!keepMessage) setStatus('Stopped');
+}
+
+// ================= stats / wake lock / visibility =================
+function startStats() { stopStats(); last = {t: 0, b: 0}; statsTimer = setInterval(pollStats, 1000); }
+function stopStats() { clearInterval(statsTimer); statsTimer = null; }
+async function pollStats() {
+  if (!pc) return;
+  const rep = await pc.getStats(); let out = '';
+  rep.forEach(r => {
+    if (r.type === 'outbound-rtp' && r.kind === 'video') {
+      const dt = (r.timestamp - last.t) / 1000;
+      const kbps = last.t ? Math.round((r.bytesSent - last.b) * 8 / dt / 1000) : 0;
+      last = {t: r.timestamp, b: r.bytesSent};
+      out += `video: ${r.frameWidth || '?'}x${r.frameHeight || '?'} @ ${Math.round(r.framesPerSecond || 0)} fps, ${kbps} kbps\n`;
+    }
+    if (r.type === 'candidate-pair' && r.nominated && r.state === 'succeeded') {
+      out += `round-trip: ${Math.round((r.currentRoundTripTime || 0) * 1000)} ms\n`;
+    }
+  });
+  $('stats').textContent = out;
+}
+async function acquireWakeLock() {
+  try {
+    if ('wakeLock' in navigator && !wakeLock) {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; });
+    }
+  } catch (e) { log('wake lock: ' + e.message); }
+}
+function releaseWakeLock() { try { wakeLock && wakeLock.release(); } catch {} wakeLock = null; }
+
+document.addEventListener('visibilitychange', () => {
+  if (!wantLive) return;
+  if (document.visibilityState === 'hidden') { log('page hidden – the browser may pause the camera'); return; }
+  acquireWakeLock();
+  if (camStream && camStream.getTracks().some(t => t.readyState === 'ended')) { log('camera was stopped by the browser'); onDropped(); }
+});
+
+// ================= buttons =================
+if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+  setStatus('Camera blocked: open this page with https://', 'bad');
+  $('go').disabled = true; $('flip').disabled = true;
+}
+
+$('go').onclick = async () => {
+  if (wantLive) return stopLive();
+  wantLive = true; setLiveUI(true); setStatus('Starting camera…');
+  try {
+    await startCapture();
+    setStatus('Connecting…');
+    await publish();
+    await acquireWakeLock();
+  } catch (e) {
+    log('ERROR: ' + e.message);
+    setStatus(e.name === 'NotAllowedError' ? 'Camera permission denied' : e.message, 'bad');
+    await stopLive(true);
+  }
+};
+
+$('tGesture').onclick = () => { if (rig.ready) rig.gesture('test'); else log('avatar not ready'); };
+$('tWave').onclick    = () => { if (rig.ready) rig.wave('test');    else log('avatar not ready'); };
+$('tStop').onclick    = () => { if (rig.ready) rig.stopMotion(); };
+setInterval(() => {
+  $('motionState').textContent = rig.ready
+    ? `body: ${rig.bodyState}${rig._wave ? ' + waving' : ''}${rig.pointingNow ? ' + pointing' : ''}${rig.leanAmount > 0.05 ? ' + leaning in' : ''}${pending ? ' + speaking' : ''}` : '';
+}, 250);
+
+// ================= sliders for WAVE / POINT / VOICE =================
+// One builder for all three panels. SPEC rows are [path, label, min, max, step, unit]; the values are
+// written straight into the live object (AvatarInternals.WAVE / .POINT / .VOICE) and kept in this browser.
+function buildTuner({target, defaults, spec, rows, key, onChange}) {
+  const get = p => p.split('.').reduce((o, k) => o[k], target);
+  const set = (p, v) => { const ks = p.split('.'), last = ks.pop(); ks.reduce((o, k) => o[k], target)[last] = v; };
+  const merge = (dst, src) => { for (const k in src) { const v = src[k]; if (v && typeof v === 'object') merge(dst[k], v); else if (typeof v === 'number' || typeof v === 'boolean') dst[k] = v; } };
+  try { const saved = JSON.parse(localStorage.getItem(key) || 'null'); if (saved) merge(target, saved); } catch {}
+  const save = () => { try { localStorage.setItem(key, JSON.stringify(target)); } catch {} };
+  const inputs = [];
+  for (const [path, label, min, max, step, unit] of spec) {
+    const row = document.createElement('div'); row.className = 'tune';
+    const lab = document.createElement('label'); lab.textContent = label + (unit ? ' (' + unit + ')' : '');
+    const rng = document.createElement('input'); rng.type = 'range'; rng.min = min; rng.max = max; rng.step = step;
+    const num = document.createElement('input'); num.type = 'number'; num.min = min; num.max = max; num.step = step;
+    rng.setAttribute('aria-label', label); num.setAttribute('aria-label', label + ' value');
+    const apply = v => {
+      v = Math.min(max, Math.max(min, Number(v))); if (Number.isNaN(v)) return;
+      set(path, v); rng.value = num.value = v; save(); if (onChange) onChange();
+    };
+    rng.oninput = () => apply(rng.value); num.onchange = () => apply(num.value);
+    rng.value = num.value = get(path);
+    row.append(lab, rng, num); rows.appendChild(row); inputs.push([path, rng, num]);
+  }
+  return {
+    save,
+    refresh: () => inputs.forEach(([p, r, n]) => { r.value = n.value = get(p); }),
+    reset: () => { merge(target, defaults); save(); if (onChange) onChange(); },
+    text: name => 'const ' + name + ' = ' + JSON.stringify(target, null, 2) + ';',
+  };
+}
+async function copyOut(text, noteId, name) {
+  const note = document.getElementById(noteId);
+  try { await navigator.clipboard.writeText(text); note.textContent = 'Copied. Paste it over the ' + name + ' constant in web/avatar.js to make it permanent.'; }
+  catch { note.textContent = text; }
+}
+
+// ================= wave controls =================
+(function () {
+  const W = AvatarInternals.WAVE;
+  const SPEC = [
+    ['pose.upper', 'Upper arm angle', -215, -120, 1, '°'],
+    ['pose.fore', 'Forearm angle', -150, -60, 1, '°'],
+    ['pose.hand', 'Hand angle', -160, -60, 1, '°'],
+    ['swing.fore', 'Forearm swing', 0, 40, 1, '°'],
+    ['swing.hand', 'Wrist flick', 0, 40, 1, '°'],
+    ['swing.upper', 'Upper-arm sway', 0, 10, 0.5, '°'],
+    ['freq', 'Swing speed', 0.8, 4, 0.1, 'Hz'],
+    ['lag', 'Wrist lag', 0, 0.2, 0.01, 's'],
+    ['raise', 'Raise time', 0.3, 1.5, 0.05, 's'],
+    ['hold', 'Wave duration', 0.5, 6, 0.1, 's'],
+    ['lower', 'Lower time', 0.3, 1.5, 0.05, 's'],
+    ['stagger.fore', 'Elbow delay', 0, 0.4, 0.01, ''],
+    ['stagger.hand', 'Wrist delay', 0, 0.5, 0.01, ''],
+  ];
+  const t = buildTuner({
+    target: W, defaults: AvatarInternals.DEFAULT_WAVE, spec: SPEC,
+    rows: document.getElementById('tuneRows'), key: 'waveTuning.v5',
+  });
+  document.getElementById('tPlay').onclick = () => { if (!rig.ready) return log('avatar not ready'); if (rig._wave) rig.stopMotion(); setTimeout(() => rig.wave('test'), rig._wave ? 450 : 0); };
+  document.getElementById('tReset').onclick = () => { t.reset(); t.refresh(); };
+  document.getElementById('tCopy').onclick = () => copyOut(t.text('WAVE'), 'tuneNote', 'WAVE');
+})();
+
+// ================= pointing controls =================
+(function () {
+  const P = AvatarInternals.POINT;
+  const SPEC = [
+    ['range.min', 'Lowest arm angle', 20, 140, 1, '°'],
+    ['range.max', 'Highest arm angle', 200, 320, 1, '°'],
+    ['elbow', 'Elbow bend', 0, 45, 1, '°'],
+    ['wrist', 'Wrist angle', -30, 30, 1, '°'],
+    ['pivot.x', 'Shoulder across the page', -1, 1, 0.02, ''],
+    ['pivot.y', 'Shoulder up the page', -1, 1, 0.02, ''],
+    ['follow', 'Follow smoothing', 0.02, 0.6, 0.01, 's'],
+    ['raise', 'Raise time', 0.15, 1.5, 0.05, 's'],
+    ['drop', 'Lower time', 0.15, 1.5, 0.05, 's'],
+    ['idle', 'Lower after no movement', 1, 60, 1, 's'],
+  ];
+  const t = buildTuner({
+    target: P, defaults: AvatarInternals.DEFAULT_POINT, spec: SPEC,
+    rows: document.getElementById('pointRows'), key: 'pointTuning.v6',
+  });
+  document.getElementById('pReset').onclick = () => { t.reset(); t.refresh(); };
+  document.getElementById('pCopy').onclick = () => copyOut(t.text('POINT'), 'pointNote', 'POINT');
+})();
+
+// ================= voice controls =================
+(function () {
+  const V = AvatarInternals.VOICE;
+  const SPEC = [
+    ['gain', 'Volume', 0.5, 4, 0.1, '×'],
+    ['warmth', 'Warmth', -6, 12, 0.5, 'dB'],
+    ['presence', 'Clarity', -6, 10, 0.5, 'dB'],
+    ['edge', 'Take off the rasp', -12, 6, 0.5, 'dB'],
+  ];
+  const retune = () => { if (speaker) speaker.tune(); if (previewSpeaker) previewSpeaker.tune(); };
+  const t = buildTuner({
+    target: V, defaults: AvatarInternals.DEFAULT_VOICE, spec: SPEC,
+    rows: document.getElementById('voiceRows'), key: 'voiceTuning.v6', onChange: retune,
+  });
+  const flags = () => { V.filter = $('vFilter').checked; V.compress = $('vComp').checked; t.save(); retune(); };
+  $('vFilter').checked = V.filter !== false; $('vComp').checked = V.compress !== false;
+  $('vFilter').onchange = flags; $('vComp').onchange = flags;
+  $('vReset').onclick = () => {
+    t.reset(); t.refresh();
+    $('vFilter').checked = AvatarInternals.DEFAULT_VOICE.filter !== false;
+    $('vComp').checked = AvatarInternals.DEFAULT_VOICE.compress !== false;
+    V.filter = $('vFilter').checked; V.compress = $('vComp').checked; t.save(); retune();
+  };
+  $('vTest').onclick = () => {
+    if (!lastReply) return log('send a comment first, then "Test voice" replays that reply with the current settings');
+    getSpeaker().say(lastReply.bytes, lastReply.text, { words: lastReply.words }).catch(e => log('voice test failed: ' + e.message));
+  };
+})();
+
+$('flip').onclick = async () => {
+  facing = facing === 'user' ? 'environment' : 'user';
+  log('camera: ' + (facing === 'user' ? 'front' : 'back'));
+  if (!camStream) return;
+  try {
+    camStream.getVideoTracks().forEach(t => { t.stop(); camStream.removeTrack(t); });   // iOS: release old camera first
+    const vs = await navigator.mediaDevices.getUserMedia({video: videoConstraints()});
+    const nt = vs.getVideoTracks()[0];
+    camStream.addTrack(nt);
+    cam.srcObject = new MediaStream([nt]);          // only the hidden source changes; the published canvas track stays
+    await cam.play();
+  } catch (e) { log('flip failed: ' + e.message); }
+};
+</script>
+</main></body></html>
