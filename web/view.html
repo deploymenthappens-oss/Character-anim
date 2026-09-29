@@ -1,0 +1,661 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Watch</title>
+<link rel="stylesheet" href="style.css">
+<script src="theme.js"></script>
+<!-- Sketchfab Viewer API SDK — enables postMessage-based programmatic control
+     of every node/material/camera in the office scene iframe. Must load before
+     any OfficeScene.activate() call. -->
+<script src="https://static.sketchfab.com/api/sketchfab-viewer-1.12.1.js"></script>
+</head><body><main>
+<div class="topbar">
+  <h1>Watch the stream</h1>
+  <button class="theme-toggle" id="themeBtn" type="button"><span data-theme-icon>☀️</span><span data-theme-label>Light mode</span></button>
+</div>
+
+<!-- No video track here on purpose: the character is never baked into pixels. Every viewer renders their
+     own copy of the same Rive avatar locally and reacts to small JSON events broadcast over /events (SSE) -
+     the admin's dashboard, the chat replies, gestures and background are all just events, so this page
+     stays plain HTTPS/TCP (no MediaMTX/WHEP/UDP at all). See avatar.js / avatar-orchestra.js / lipsync.js. -->
+<div class="stage-wrap">
+  <div class="avatar-stage" id="stage">
+    <canvas class="bg" id="bgCanvas"></canvas>
+    <iframe class="scene3d" id="scene3dFrame" title="3D scene" allow="autoplay; xr-spatial-tracking" loading="lazy"></iframe>
+    <canvas class="avatar" id="avatarCanvas" width="900" height="900"></canvas>
+    <!-- Speech bubble: positioned above the character mouth, updated word-by-word by 12-speech-bubble.js -->
+    <div id="viewSpeechBubble" class="speech-bubble-dom" aria-live="polite" aria-atomic="true"></div>
+    <button class="stage-badge tilt-hint" id="tiltHint" type="button" hidden>🧭 Tap for tilt</button>
+    <div class="stage-badge walk-hint" id="scene3dHint" hidden>🖱️ Drag to look · W A S D / arrows to walk</div>
+  </div>
+</div>
+
+<div class="sidebar">
+<!-- Free-roam controls: only shown while the admin has Free-roam ON and the 3D room is selected. Lives BELOW the
+     fixed scene (the scene never scrolls; everything in the sidebar does). -->
+<div class="panel vwalk" id="viewWalkPad" hidden>
+  <div class="vwalk-head"><b>Explore the room</b><span class="note">drag the scene to look · or use the pad / keys</span></div>
+  <div class="vwalk-grid">
+    <div class="vwalk-dpad">
+      <span></span><button type="button" data-k="fwd" aria-label="Forward">▲</button><span></span>
+      <button type="button" data-k="left" aria-label="Step left">◀</button>
+      <button type="button" data-k="back" aria-label="Back">▼</button>
+      <button type="button" data-k="right" aria-label="Step right">▶</button>
+    </div>
+    <div class="vwalk-side">
+      <div class="vwalk-row"><button type="button" data-k="turnL" aria-label="Turn left">⟲ Turn</button><button type="button" data-k="turnR" aria-label="Turn right">Turn ⟳</button></div>
+      <div class="vwalk-row"><button type="button" data-k="up" aria-label="Up">⤒ Up</button><button type="button" data-k="down" aria-label="Down">⤓ Down</button></div>
+      <div class="vwalk-row"><button type="button" data-k="sprint" aria-label="Run">⇧ Run</button></div>
+    </div>
+  </div>
+  <label class="vwalk-speed">Speed <input type="range" id="viewWalkSpeed" min="0.5" max="8" step="0.5" value="2"></label>
+</div>
+
+<div class="panel char-panel">
+  <div class="char-panel-head">
+    <b>Character</b>
+    <span id="status">Connecting…</span>
+  </div>
+  <label class="check"><input id="monitor" type="checkbox" checked> Play the avatar's voice</label>
+  <span class="note" id="avatarState">loading…</span>
+  <div class="moves-head">
+    <b>Moves</b>
+    <span class="note" id="testNote">15 free moves</span>
+  </div>
+  <div class="test-row" id="testRow" role="list" aria-label="Trigger a character move"></div>
+</div>
+
+<div class="panel">
+  <b>Comments</b> <span class="note" id="chatState"></span>
+  <div id="chatlog" aria-live="polite"></div>
+  <div class="chatrow">
+    <input name="who" id="chatname" aria-label="Your name" autocomplete="off" maxlength="24">
+    <input name="msg" id="chatmsg" aria-label="Comment" placeholder="Type a comment…" autocomplete="off" maxlength="200">
+    <button id="chatsend" type="button" class="go">Send</button>
+  </div>
+</div>
+
+<div class="panel"><b>Log</b><pre id="log"></pre></div>
+</div><!-- /sidebar -->
+
+<script src="stage-bg.js"></script>
+<script src="hawkins-room.js"></script>
+<script src="lipsync.js"></script>
+<script src="avatar-orchestra.js"></script>
+<script src="avatar.js"></script>
+<script src="product-card.js"></script>
+<script src="chat.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+Theme.init('themeBtn');
+
+function log(m) { $('log').textContent = `[${new Date().toLocaleTimeString()}] ${m}\n` + $('log').textContent; }
+function setStatus(text, cls = '') {
+  $('status').textContent = text; $('status').className = cls;
+}
+
+// ================= background =================
+const bg = new StageBackground.StageBackground($('bgCanvas'), 'aurora');
+// Phone: device-tilt parallax needs a tap first (iOS gates deviceorientation behind a permission
+// prompt that only fires from a user gesture). Desktop gets mouse parallax automatically - no hint
+// needed there. See stage-bg.js enableDeviceTilt().
+if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) {
+  const hint = $('tiltHint'); hint.hidden = false;
+  hint.onclick = () => { bg.enableDeviceTilt().then(ok => { if (ok) hint.hidden = true; else hint.textContent = '🧭 Tilt unavailable'; }); };
+}
+
+// ---- Hawkins room: the one background theme that isn't a procedural gradient. StageBackground
+// (bg, above) and HawkinsRoom both draw into the SAME #bgCanvas from their own independent
+// requestAnimationFrame loops - running both at once would have them race to draw over each other
+// every frame (exactly the flicker/"doubled" look to watch for), so setBgTheme() below always stops
+// one loop before starting the other; only one of the two is ever drawing at a time.
+const room = new HawkinsRoom.HawkinsRoom();
+let roomLoading = null, roomActive = false, roomRaf = null;
+// Render resolution for the room's own off-DOM canvas: matched to the actual displayed size x DPR for
+// crisp Cover-fit scaling (the .riv's native art is vector/procedural, so this is genuinely sharper on
+// a retina/high-DPR screen, not just a bigger blit of the same soft image) - capped, and capped LOWER
+// on phones, since that's real GPU/battery cost for a background layer, not the main subject.
+const bgDpr = () => Math.min(window.devicePixelRatio || 1, window.innerWidth < 760 ? 2 : 2.5);
+function roomResolution() {
+  const c = $('bgCanvas'), isMobile = window.innerWidth < 760;
+  const dpr = bgDpr();
+  const maxW = isMobile ? 1280 : 2000;
+  const w = Math.min(maxW, Math.round((c.clientWidth || 1280) * dpr));
+  const aspect = (c.clientWidth && c.clientHeight) ? c.clientWidth / c.clientHeight : 16 / 9;
+  const h = Math.round(w / aspect);
+  return { width: w, height: h };
+}
+function ensureRoomLoaded() {
+  if (roomLoading) return roomLoading;
+  const { width, height } = roomResolution();
+  roomLoading = room.load({ src: 'hawkins-room.riv', width, height })
+    .then(() => { room.autopilot(true); log('Hawkins room loaded (' + Object.keys(room.inputs).length + ' inputs, ' + width + 'x' + height + ')'); })
+    .catch(e => log('HAWKINS ROOM ERROR: ' + e.message));
+  return roomLoading;
+}
+let roomPulse = 0, roomBeatWired = false;
+function drawRoomLoop() {
+  if (!roomActive) return;
+  const c = $('bgCanvas'), w = Math.round((c.clientWidth || c.width) * bgDpr()), h = Math.round((c.clientHeight || c.height) * bgDpr());
+  if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+  if (room.ready) room.draw(c.getContext('2d'), c.width, c.height);
+  // Real per-frame speech envelope (rig.orchestra.voiceLevel) rather than the old one-shot pulse(1)/
+  // pulse(0) around the whole reply — this is what lets the room's light-pulse/prop reactions actually
+  // land on the loud/quiet parts of the voice instead of just "a reply happens to be playing". Also
+  // wires the discrete beat hook once Orchestra is available, same as the publisher-side render loop.
+  if (!roomBeatWired && rig.orchestra) { rig.orchestra.onBeat = s => room.reactToBeat(s); roomBeatWired = true; }
+  const roomTarget = Math.max((rig.ready && rig.orchestra) ? rig.orchestra.voiceLevel : (rig.ready && rig.speaking ? 1 : 0), window.Spell ? window.Spell.energy : 0);   // + the spell's building magic
+  roomPulse += (roomTarget - roomPulse) * 0.08;
+  room.reactToSpeech(roomPulse);
+  roomRaf = requestAnimationFrame(drawRoomLoop);
+}
+// Renders whichever theme (procedural gradient or Rive room) is CURRENTLY active into the given
+// context, without touching either one's own self-driving loop - the one shared primitive the
+// crossfade below needs to blend "what's showing now" against "what's coming next".
+function renderActive(ctx, w, h) {
+  if (roomActive) { if (room.ready) room.draw(ctx, w, h); }
+  else bg.renderFrame(ctx, w, h);
+}
+const easeInOutCubic = x => x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+
+// ---- Walk-in: character marches from the door (left, by the table) to the right corner, full
+// frontal the whole way - the rig has one front-facing artboard, no side-view walk-cycle art, so
+// this is the honest approximation: play the 'march' leg gesture (Orchestra's "walking on the
+// spot", avatar-orchestra.js) while sliding the character's own canvas horizontally via the
+// --avatar-walk-x CSS variable (style.css), eased, then hand the position back to centered (0%).
+// fromPct/toPct are % offsets of the character's OWN box width (translateX), not stage pixels, so
+// the same offset reads correctly at every --avatar-zoom / screen size.
+const WALK_IN = {fromPct: -34, toPct: 34, dur: 3.6, marchEvery: 3.0};
+const WALK_CENTER = {toPct: 0, dur: 2.4}, WALK_OUT = {toPct: -110, dur: 2.8};
+// The character STAYS wherever a walk ends (side of the room after a walk-in) until the admin sends another walk
+// (Recenter / Walk out / Walk in). Nothing here ever snaps him back to the middle by itself.
+let walkNow = 0, walkRaf = null;                   // current offset in % of his own box; the rAF handle while a walk runs
+function setWalkX(pct) { walkNow = pct; $('stage').style.setProperty('--avatar-walk-x', pct.toFixed(2) + '%'); }
+function walkTo(toPct, dur, fromPct) {
+  if (walkRaf) cancelAnimationFrame(walkRaf);
+  const from = fromPct != null ? fromPct : walkNow, t0 = performance.now();
+  let marchAt = -Infinity;
+  if (Math.abs(from - toPct) < 0.05) { walkRaf = null; setWalkX(toPct); return; }
+  (function step(now) {
+    const t = (now - t0) / 1000;
+    if (t >= dur) { walkRaf = null; setWalkX(toPct); return; }
+    if (rig.ready && rig.orchestra && t - marchAt >= WALK_IN.marchEvery) {
+      try { rig.orchestra.cue('march', {prio: 3}); } catch (e) {}
+      marchAt = t;
+    }
+    setWalkX(from + (toPct - from) * easeInOutCubic(Math.min(1, t / dur)));
+    walkRaf = requestAnimationFrame(step);
+  })(t0);
+}
+function startWalkIn() { walkTo(WALK_IN.toPct, WALK_IN.dur, WALK_IN.fromPct); }
+// ---- 3D scenes (Sketchfab iframe embeds): these are DOM-layer swaps, not canvas draws, so they
+// can't use the snapshot/crossfade trick below (a cross-origin iframe can't be rasterized into an
+// offscreen canvas) - just a plain opacity fade on the iframe itself. Also: this layer only exists
+// on THIS page (view.html renders live in each viewer's own browser over SSE); it has no equivalent
+// on publish.html, whose #stage canvas gets captureStream()'d for the actual outgoing WHIP video -
+// an iframe can never be drawn into that, so the broadcast side falls back to a plain gradient
+// theme (see js/03-background.js paintBackground) whenever this scene is selected.
+// api_version=1.0.0 unlocks the Sketchfab Viewer API (postMessage SDK).
+const SCENE3D = {
+  'studio-office-3d': true,
+};
+const scene3dEl = $('scene3dFrame');
+let scene3dActive = false;
+let scene3dFreeState = false;   // last-known gate from the admin
+function applyScene3DFreeClass() {
+  syncWalkPad();
+  const free = scene3dActive && scene3dFreeState;
+  scene3dEl.classList.toggle('free', free);
+  $('scene3dHint').hidden = !free;
+  if (free) $('scene3dHint').classList.remove('faded');   // re-show on every fresh free-roam grant
+}
+function onScene3DFree(d) { scene3dFreeState = !!(d && d.free); applyScene3DFreeClass(); }
+// Free-roam controls (on-screen pad + keyboard) only exist while the admin's Free-roam is ON and the room is up.
+const VKEYMAP = { w:'fwd', arrowup:'fwd', s:'back', arrowdown:'back', a:'left', d:'right', q:'turnL', arrowleft:'turnL', e:'turnR', arrowright:'turnR', r:'up', f:'down', shift:'sprint' };
+const canRoam = () => window.OfficeScene && OfficeScene.ready && scene3dActive && scene3dFreeState;
+function syncWalkPad() {
+  const on = scene3dActive && scene3dFreeState;
+  $('viewWalkPad').hidden = !on;
+  document.body.classList.toggle('roam-on', on);
+  if (!on && window.OfficeScene) OfficeScene.clearMoveKeys();
+}
+document.querySelectorAll('#viewWalkPad [data-k]').forEach(b => {
+  const k = b.dataset.k;
+  const down = e => { e.preventDefault(); if (!canRoam()) return; b.setPointerCapture && b.setPointerCapture(e.pointerId); b.classList.add('down'); OfficeScene.setMoveKey(k, true); };
+  const up = () => { b.classList.remove('down'); if (window.OfficeScene) OfficeScene.setMoveKey(k, false); };
+  b.addEventListener('pointerdown', down);
+  ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(ev => b.addEventListener(ev, up));
+  b.addEventListener('contextmenu', e => e.preventDefault());
+});
+$('viewWalkSpeed').addEventListener('input', e => window.OfficeScene && OfficeScene.setMoveSpeed(e.target.value));
+const _typing = t => t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable);
+document.addEventListener('keydown', e => {
+  const k = VKEYMAP[e.key.toLowerCase()];
+  if (!k || e.ctrlKey || e.metaKey || e.altKey || _typing(e.target) || !canRoam()) return;
+  e.preventDefault(); OfficeScene.setMoveKey(k, true);
+});
+document.addEventListener('keyup', e => { const k = VKEYMAP[e.key.toLowerCase()]; if (k && window.OfficeScene) OfficeScene.setMoveKey(k, false); });
+window.addEventListener('blur', () => window.OfficeScene && OfficeScene.clearMoveKeys());
+document.addEventListener('visibilitychange', () => { if (document.hidden && window.OfficeScene) OfficeScene.clearMoveKeys(); });
+
+// Fade the hint out the moment the viewer actually clicks/drags into the
+// iframe — can't read anything inside a cross-origin Sketchfab iframe, but
+// focus moving into it fires a 'blur' on the top-level window, which is a
+// reliable, well-known signal that a click landed there.
+window.addEventListener('blur', () => {
+  if (document.activeElement === scene3dEl) $('scene3dHint').classList.add('faded');
+});
+function setScene3D(theme) {
+  const goingTo3D = !!SCENE3D[theme];
+  if (goingTo3D === scene3dActive) return;
+  if (goingTo3D) {
+    scene3dEl.classList.add('on');
+    // Activate Viewer API so incoming 'office-input' SSE events can be applied here.
+    // IMPORTANT: don't set scene3dEl.src manually first - client.init() inside
+    // activate() owns that (postMessage handshake). Pre-setting it to a hand-built
+    // embed URL races the SDK's own navigation and the API never connects.
+    if (window.OfficeScene) OfficeScene.activate(scene3dEl, () => {
+      // Apply any state from the history snapshot (late viewer join).
+      if (_pendingOfficeState) { applyOfficeState(_pendingOfficeState); _pendingOfficeState = null; }
+    });
+  } else {
+    scene3dEl.classList.remove('on');
+    setTimeout(() => { if (!scene3dActive) scene3dEl.src = ''; }, 400);
+  }
+  scene3dActive = goingTo3D;
+  $('stage').classList.toggle('is3d', goingTo3D);   // shrink + dock the character to the side (see .avatar-stage.is3d in style.css)
+  applyScene3DFreeClass();
+}
+
+// ── office-input and scene3d-goto handlers (received from admin) ──────
+// Queued until the Viewer API is ready (late viewer join race).
+let _pendingOfficeState = null;
+
+function applyOfficeState(state) {
+  if (!window.OfficeScene || !OfficeScene.ready) return;
+  if (state.visibility) {
+    for (const [id, visible] of Object.entries(state.visibility)) {
+      OfficeScene.applyVisibility(Number(id), visible, { instant: true });   // join-time snapshot: no fireworks for old changes
+    }
+  }
+  if (state.colors) {
+    for (const [name, rgb] of Object.entries(state.colors)) OfficeScene.setMaterialColor(name, rgb);
+  }
+  if (state.camera) {
+    OfficeScene.setCameraLookAt(state.camera.eye, state.camera.target, 0.8);
+  }
+}
+
+function onOfficeInput(d) {
+  if (d.kind === 'wandcfg') {   // wand + auto-pilot camera on/off from the admin panel
+    if (window.WandCast && d.value) { window.WandCast.cfg.on = d.value.wand !== false; window.WandCast.cfg.trick = ['hide', 'show', 'both'].includes(d.value.trick) ? d.value.trick : 'hide'; }
+    if (window.Autopilot && d.value) window.Autopilot.cfg.on = d.value.autopilot !== false;
+    return;
+  }
+  if (!window.OfficeScene) return;
+  if (!OfficeScene.ready) {
+    // API not up yet — queue the full state snapshot for when it is.
+    if (!_pendingOfficeState) _pendingOfficeState = { visibility: {}, camera: null, colors: {} };
+    if (!_pendingOfficeState.colors) _pendingOfficeState.colors = {};
+    if (d.kind === 'visibility') _pendingOfficeState.visibility[d.name] = d.value;
+    if (d.kind === 'color')      _pendingOfficeState.colors[d.name] = d.value;
+    if (d.kind === 'camera')     _pendingOfficeState.camera = d.value;
+    return;
+  }
+  if (d.kind === 'visibility') OfficeScene.applyVisibility(Number(d.name), d.value);
+  if (d.kind === 'shot' && window.Autopilot) { window.Autopilot.play(d.value); return; }   // the admin's one auto-pilot camera move
+  if (d.kind === 'camera') {
+    if (d.name === 'live') { if (!scene3dFreeState && !(window.Autopilot && window.Autopilot.busy)) OfficeScene.setCameraLookAt(d.value.eye, d.value.target, 0.25); }
+    else OfficeScene.setCameraLookAt(d.value.eye, d.value.target, 1.2);
+  }
+  if (d.kind === 'color')      OfficeScene.setMaterialColor(d.name, d.value);
+  if (d.kind === 'anim') {
+    if (d.value?.action === 'play')  OfficeScene.playAnim();
+    if (d.value?.action === 'pause') OfficeScene.pauseAnim();
+  }
+}
+
+let transitionRaf = null;
+function setBgTheme(theme) {
+  wideTheme = !!SCENE3D[theme] || theme === 'hawkins-room';
+  document.body.classList.toggle('wide-scene', wideTheme);
+  syncStageRatio();
+  setScene3D(theme);
+  if (SCENE3D[theme]) { bg.stop(); if (roomRaf) cancelAnimationFrame(roomRaf); roomRaf = null; roomActive = false; return; }
+  const goingToRoom = theme === 'hawkins-room';
+  if (goingToRoom === roomActive) { if (!goingToRoom) { bg.setTheme(theme); bg.start(); } return; }   // same mode, or a gradient-to-gradient swap: no crossfade needed
+  const c = $('bgCanvas'), w = Math.round((c.clientWidth || c.width) * bgDpr()), h = Math.round((c.clientHeight || c.height) * bgDpr());
+  if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+  const ctx = c.getContext('2d');
+  const from = document.createElement('canvas'); from.width = w; from.height = h;
+  renderActive(from.getContext('2d'), w, h);              // snapshot of whatever is showing right now
+  bg.stop(); if (roomRaf) cancelAnimationFrame(roomRaf); roomRaf = null;
+
+  const finish = () => {
+    roomActive = goingToRoom;
+    if (goingToRoom) { drawRoomLoop(); startWalkIn(); } else { bg.setTheme(theme); bg.start(); if (walkRaf) { cancelAnimationFrame(walkRaf); walkRaf = null; } setWalkX(0); }
+  };
+  const readyP = goingToRoom ? ensureRoomLoaded() : Promise.resolve();
+  readyP.then(() => {
+    if (!goingToRoom) bg.setTheme(theme);                 // pre-set so the "to" side of the blend is already the new gradient
+    const dur = 380, t0 = performance.now();
+    if (transitionRaf) cancelAnimationFrame(transitionRaf);
+    (function step(now) {
+      const a = easeInOutCubic(Math.min(1, (now - t0) / dur));
+      ctx.clearRect(0, 0, w, h);
+      ctx.globalAlpha = 1; ctx.drawImage(from, 0, 0, w, h);
+      ctx.globalAlpha = a;
+      if (goingToRoom) { if (room.ready) room.draw(ctx, w, h); } else bg.renderFrame(ctx, w, h);
+      ctx.globalAlpha = 1;
+      if (a < 1) transitionRaf = requestAnimationFrame(step);
+      else finish();
+    })(t0);
+  });
+}
+
+// ================= avatar =================
+// Sharper character on phones/retina: the canvas is upscaled by --avatar-zoom (1.35x on mobile) AND by the screen's
+// pixel ratio, so the old fixed 900px bitmap looked soft when zoomed. avatar.js derives the width from the height.
+{ const dpr = window.devicePixelRatio || 1, mob = window.innerWidth < 760;
+  $('avatarCanvas').height = dpr >= 2 ? (mob ? 1250 : 1500) : 900; }
+const rig = new AvatarRig({ canvas: $('avatarCanvas') });
+let ctx = null, speaker = null;
+function unlockAudio() {
+  if (!ctx) { const AC = window.AudioContext || window.webkitAudioContext; ctx = new AC(); }
+  if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+}
+['pointerdown', 'touchend', 'click', 'keydown'].forEach(ev => document.addEventListener(ev, unlockAudio, { passive: true }));
+function getSpeaker() {
+  unlockAudio();
+  if (!speaker) speaker = new Speaker({ rig, ctx, destination: ctx.destination, motion: () => ({ gesture: true, wave: true }) });
+  return speaker;
+}
+
+rig.load()
+  .then(() => {
+    $('avatarState').textContent = 'ready';
+    log('avatar loaded, ' + rig.version);
+    rig.setLooking(true);
+    buildTestRow();
+    setStatus('● LIVE', 'live');
+    syncStageRatio();
+    // Start the DOM speech bubble update loop (view.html uses CSS overlay, not canvas)
+    startDomBubbleLoop();
+  })
+  .catch(e => { $('avatarState').textContent = 'failed to load'; log('AVATAR ERROR: ' + e.message); });
+
+// Sizes the stage box to the character's ACTUAL proportions (from the avatar canvas's own resolution,
+// which avatar.js computes from the real artboard + padding) instead of a guessed fixed CSS ratio - this
+// is what makes him fill the box on mobile instead of floating in a mismatched letterboxed shape. Re-checked
+// occasionally because the reach-probe (avatar.js) can still grow the canvas the first time an unusually
+// wide gesture plays.
+let _stageRatio = null, wideTheme = false;
+function syncStageRatio() {
+  // Phones + a ROOM background (3D office or Hawkins): the stage uses the publisher's own 16:9 frame so viewers see
+  // the whole room exactly as the publisher/desktop viewers do, instead of a tall portrait crop of a small part of it.
+  const wide = wideTheme && window.innerWidth < 760;
+  if (wide) { if (_stageRatio !== 16 / 9) { $('stage').style.aspectRatio = '16 / 9'; _stageRatio = 16 / 9; } return; }
+  if (!rig.ready || !rig.canvas.width || !rig.canvas.height) return;
+  const r = rig.canvas.width / rig.canvas.height;
+  if (r !== _stageRatio) { $('stage').style.aspectRatio = String(r); _stageRatio = r; }
+}
+setInterval(syncStageRatio, 1500);
+window.addEventListener('resize', syncStageRatio);
+window.addEventListener('orientationchange', () => setTimeout(syncStageRatio, 250));
+
+// 3D room iframe on phones: render it at a fixed 960x540 logical size and scale it down to the stage width, so the
+// framing (field of view, aspect) is IDENTICAL to what the publisher and desktop viewers see, and Sketchfab's own
+// title/logo strips stay a fixed fraction of the frame that the crop in style.css hides. See --sf-scale in style.css.
+{ const st = $('stage');
+  const fit = () => st.style.setProperty('--sf-scale', (st.clientWidth / 960).toFixed(4));
+  fit(); if (window.ResizeObserver) new ResizeObserver(fit).observe(st); else window.addEventListener('resize', fit); }
+
+// The character no longer tracks the viewer's mouse/touch position (rig.lookAt() is no longer called
+// from pointer events here). A live cursor isn't where a camera-facing character should look anyway,
+// and it read as eyes darting after the pointer rather than a person looking at the viewer. Gaze now
+// comes entirely from the avatar's own idle behaviour (Orchestra's Gaze class in avatar-orchestra.js:
+// small idle drift near the lens, with an occasional larger glance away - see the comment there).
+// rig.lookAt(x, y) is still there for deliberate calls (e.g. centering the gaze on lean-in), just not
+// wired to the mouse any more.
+
+// ---- 15 free "test the character" moves (rate-limited server-side; see /gesture/test and
+// chat/server.js GESTURE_TEST_LIMIT). Kept in sync with chat/server.js's GESTURE_NAMES - this is a
+// curated subset (15 of 18): the 3 left out (weightShift, fidgetFoot, fidgetTap) are subtle idle-only
+// beats that read as nothing when fired deliberately, so they're not worth a viewer's tap.
+const TEST_GESTURES = ['wave', 'glasses', 'present', 'nod', 'shake', 'surprise', 'shrug', 'celebrate',
+  'footTap', 'bounce', 'march', 'kick', 'stomp', 'dance', 'thinking'];
+const GESTURE_EMOJI = { wave: '👋', glasses: '🕶️', present: '🙌', nod: '🙂', shake: '🙅', surprise: '😲',
+  shrug: '🤷', celebrate: '🎉', footTap: '🦶', bounce: '🐇', march: '🚶', kick: '🦵', stomp: '👟', dance: '💃', thinking: '🤔' };
+function buildTestRow() {
+  const row = $('testRow'); row.innerHTML = '';
+  for (const name of TEST_GESTURES) {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'chip'; b.setAttribute('role', 'listitem');
+    b.innerHTML = `<span class="chip-emoji" aria-hidden="true">${GESTURE_EMOJI[name] || '✨'}</span><span class="chip-label">${name}</span>`;
+    b.onclick = () => testGesture(name, b);
+    row.appendChild(b);
+  }
+}
+async function testGesture(name, btn) {
+  if (rig.ready && rig.orchestra) rig.orchestra.cue(name);   // instant local feedback either way
+  if (btn) { btn.classList.add('chip-fired'); setTimeout(() => btn.classList.remove('chip-fired'), 260); }
+  try {
+    const r = await fetch('gesture/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+    const d = await r.json().catch(() => ({}));
+    if (r.status === 429) {
+      $('testNote').textContent = "You've used all your free moves for now.";
+      document.querySelectorAll('#testRow .chip').forEach(b => b.disabled = true);
+      return;
+    }
+    if (typeof d.remaining === 'number') {
+      $('testNote').textContent = `${d.remaining} free move${d.remaining === 1 ? '' : 's'} left.`;
+      if (d.remaining <= 0) document.querySelectorAll('#testRow .chip').forEach(b => b.disabled = true);
+    }
+  } catch (e) { log('test gesture failed: ' + e.message); }
+}
+
+// ================= reply / gesture / background / motion, all over the same SSE stream =================
+let replyChain = Promise.resolve(), replyEpoch = 0;
+const _seenReplies = new Set();
+function onReply(msg) {
+  if (!rig.ready) return;
+  if (msg.id) { if (_seenReplies.has(msg.id)) return; _seenReplies.add(msg.id); if (_seenReplies.size > 60) _seenReplies.delete(_seenReplies.values().next().value); }
+  // ONE avatar, one voice: replies play strictly in order (the quick "Hi <name>!" ack, then the full reply),
+  // and an interrupt drops everything still queued (see onInterrupt below).
+  const epoch = replyEpoch;
+  replyChain = replyChain.then(() => epoch === replyEpoch ? speakReply(msg) : null);
+}
+function speakReply(msg) {
+  const sp = getSpeaker(); sp.setMuted(!$('monitor').checked);
+  // A reply to an actual viewer comment (not the idle baseline loop) always gets the wave - that's the
+  // "hi, I heard you" beat that makes a reply read as a reaction to the comment rather than more filler.
+  // gesture:false suppresses the Speaker's default full-body "action" clip for that same reply, so a real
+  // comment is answered with the wave ONLY (no extra gesture layered on top); the baseline script keeps
+  // its old behaviour (action clip, no wave) since it isn't reacting to anyone.
+  const isCommentReply = !msg.baseline;
+  return (async () => {
+    try {
+      const [r, w] = await Promise.all([
+        fetch(`audio/${msg.id}`),
+        fetch(`audio/${msg.id}/words`).then(x => x.ok ? x.json() : { words: null }).catch(() => ({ words: null })),
+      ]);
+      if (!r.ok) throw new Error('audio HTTP ' + r.status);
+      const bytes = await r.arrayBuffer();
+      bg.pulse(1);
+      if (rig.ready) rig.setEnergy(isCommentReply ? 0.85 : 0.6);   // a reaction to a real comment reads livelier than the idle baseline script
+      // words: real per-word timestamps from the TTS engine (Edge), when available, give word-accurate
+      // ('words'-mode) lip-sync instead of the text-only timing estimate - already wired through here.
+      await sp.say(bytes, msg.text, { words: w.words || null, motion: { wave: isCommentReply, gesture: !isCommentReply } });
+    } catch (e) { log('avatar speech failed: ' + e.message); rig.setViseme(0); }
+    finally { bg.pulse(0); if (rig.ready) rig.setEnergy(0.3); }   // settle back to a quiet idle baseline
+  })();
+}
+// Gestures are event-driven (SSE), not video, so if THIS viewer's avatar was still mid-gesture when a new
+// cue arrived, orchestra.cue() used to just drop it silently - the publisher's own preview played it fine
+// (locally, instantly) but some viewers never would, which is exactly the "not syncing / not functional"
+// gap. Now a busy cue is retried for a few seconds (arms are free again in ~3.2s) instead of thrown away,
+// and only the single most recent gesture is ever queued (a newer one replaces an older pending one, so
+// spamming buttons can't build up a backlog of stale moves).
+let pendingGesture = null, pendingGestureTimer = null;
+const GESTURE_RETRY_MS = 220, GESTURE_MAX_AGE_MS = 4000;
+function onGesture(d) {
+  if (!rig.ready || !rig.orchestra) return;
+  if (rig.orchestra.cue(d.name, { side: d.side })) { pendingGesture = null; return; }
+  log(`gesture "${d.name}" busy - queued`);
+  pendingGesture = d;
+  scheduleGestureRetry();
+}
+function scheduleGestureRetry() {
+  if (pendingGestureTimer) return;
+  pendingGestureTimer = setTimeout(() => {
+    pendingGestureTimer = null;
+    if (!pendingGesture) return;
+    const d = pendingGesture;
+    if (d.ts && Date.now() - d.ts > GESTURE_MAX_AGE_MS) { pendingGesture = null; log(`gesture "${d.name}" expired (too stale to still feel synced)`); return; }
+    if (!rig.ready || !rig.orchestra) { scheduleGestureRetry(); return; }
+    if (rig.orchestra.cue(d.name, { side: d.side })) { pendingGesture = null; return; }
+    scheduleGestureRetry();
+  }, GESTURE_RETRY_MS);
+}
+function onBackground(d) { if (d && d.theme) setBgTheme(d.theme); }
+function onWalkIn() { startWalkIn(); }   // manual replay from the publisher's 🚶 Walk in button
+function onWalkCenter() { walkTo(WALK_CENTER.toPct, WALK_CENTER.dur); }   // publisher's 🎯 Recenter - the only thing that brings him back to the middle
+function onWalkOut() { walkTo(WALK_OUT.toPct, WALK_OUT.dur); }           // publisher's 👋 Walk out
+function onWalkState(w) {   // late joiner: put him where the admin last left him (no walk)
+  if (!w || walkRaf) return;
+  setWalkX(w.pos === 'side' ? WALK_IN.toPct : w.pos === 'out' ? WALK_OUT.toPct : 0);
+}
+function onRoomInput(d) {
+  if (!d || !d.kind || !d.name) return;
+  ensureRoomLoaded().then(() => {
+    if (d.kind === 'trigger') room.fire(d.name);
+    else if (d.kind === 'bool') room.setBool(d.name, d.value);
+    else if (d.kind === 'number') room.setNumber(d.name, d.value);
+  });
+}
+// The publisher's "Character size" slider (25-100, default 66) used to set the STAGE BOX's own
+// max-width to that percentage - which is what was leaving the card with big dead margins on both
+// sides instead of a smaller character (shrinking the box, not the character, is only right for
+// publish.html's small camera-corner bubble; this page is always one big centered character, so the
+// box itself stays permanently full-width). "size" now drives how much of that always-full-width box
+// the character's own artwork fills, via a zoom on the avatar canvas: 25 -> a conservative crop
+// (more of the animated background shows), 100 -> fills almost edge-to-edge.
+function onMotion(d) {
+  if (d && Number.isFinite(d.size)) {
+    const pct = Math.max(25, Math.min(100, d.size));
+    // Mobile gets a higher floor/ceiling than desktop: on a narrow phone screen every bit of the
+    // (smaller) stage box matters, so the same slider position should crop in tighter than it does
+    // on a big desktop stage. 25 -> a conservative crop, 100 -> fills edge-to-edge.
+    const isMobile = window.innerWidth < 760;
+    const base = isMobile ? 0.92 : 0.85, range = isMobile ? 0.5 : 0.6;
+    const zoom = base + (pct - 25) / 75 * range;   // mobile: 0.92x..1.42x (default 66 -> ~1.19x; was 1.35x)
+    $('stage').style.setProperty('--avatar-zoom', zoom.toFixed(3));
+  }
+}
+function onSpeechState(d) {
+  if (d && d.paused) { if (speaker) speaker.stop(); if (rig.ready) rig.setViseme(0); bg.pulse(0); }
+}
+function onInterrupt() {
+  replyEpoch++;                       // drop any reply still queued behind the one being cut off
+  if (window.SpeechBubble) SpeechBubble.end();
+  if (speaker) speaker.stop();
+  if (rig.ready) rig.setViseme(0);
+  bg.pulse(0);
+}
+function onHistory(d) {
+  if (d && d.background) setBgTheme(d.background);
+  if (d && d.motion) onMotion(d.motion);
+  if (d && typeof d.speechPaused === 'boolean') onSpeechState({ paused: d.speechPaused });
+}
+
+// ---- product spotlight card ----
+// Mounted inside #stage so it stays inside the stream canvas area and scales naturally.
+const productCard = new ProductCard({ stageEl: $('stage') });
+function onProduct(d) { productCard.update(d); }
+
+const chat = new Chat({
+  log: $('chatlog'), name: $('chatname'), msg: $('chatmsg'), send: $('chatsend'), status: $('chatState'),
+  onReply,
+  onComment: () => { if (rig.ready) rig.wave('comment'); },
+  onMode: onHistory,
+  onInterrupt,
+  onGesture, onBackground, onMotion, onSpeechState, onRoomInput, onWalkIn, onWalkOut, onWalkCenter, onWalkState, onProduct,
+  onScene3DFree, onOfficeInput,
+  onGame: d => { if (window.Game) window.Game.onEvent(d); },
+  onSpell: d => { if (window.Spell) window.Spell.play({ on: !d || d.on !== false }); },   // the cinematic Upside Down scene
+});
+chat.init();
+
+// ── DOM speech bubble (view.html only) ──────────────────────────────
+// publish.html bakes the bubble into the broadcast canvas; here it is a CSS overlay. Both use the SAME
+// state machine (SpeechBubble.frame, js/12-speech-bubble.js): typed-in text in step with the voice, laid out
+// once (untyped text is visibility:hidden so nothing reflows), paged for long replies, RTL-safe.
+function startDomBubbleLoop() {
+  const el = $('viewSpeechBubble'), stageEl = $('stage'), cv = $('avatarCanvas');
+  if (!el) return;
+  const esc = t => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  let lastKey = '';
+
+  // Where is the character's MOUTH on screen, in stage-relative px? The avatar canvas is object-fit:contain'd
+  // (centred, or bottom-right when docked in the 3D room) inside its box, then CSS-transformed (walk offset +
+  // zoom). We reproduce that: mouth fraction inside the bitmap -> contain-fit -> transformed bounding rect.
+  function mouthPos() {
+    const F = rig.frac; if (!F || !cv.width) return null;
+    const ew = cv.offsetWidth, eh = cv.offsetHeight; if (!ew || !eh) return null;
+    const k = Math.min(ew / cv.width, eh / cv.height), cw = cv.width * k, ch = cv.height * k;
+    const docked = stageEl.classList.contains('is3d');
+    const ox = docked ? ew - cw : (ew - cw) / 2, oy = docked ? eh - ch : (eh - ch) / 2;
+    const lx = ox + F.cx * cw, ly = oy + (F.top + (F.sole - F.top) * 0.165) * ch;
+    const r = cv.getBoundingClientRect(), sr = stageEl.getBoundingClientRect();
+    return { x: r.left - sr.left + lx * (r.width / ew), y: r.top - sr.top + ly * (r.height / eh), sw: sr.width, sh: sr.height };
+  }
+  function place() {
+    const m = mouthPos(); if (!m) return;
+    const bw = el.offsetWidth, bh = el.offsetHeight, gap = 14, pad = 8;
+    const left = Math.max(pad, Math.min(m.sw - bw - pad, m.x - bw / 2));
+    let top = m.y - bh - gap, below = false;
+    if (top < pad) { top = Math.min(m.sh - bh - pad, m.y + gap + 6); below = true; }     // mouth near the top edge: sit under it
+    el.classList.toggle('below', below);
+    el.style.setProperty('--tail-x', Math.max(16, Math.min(bw - 16, m.x - left)).toFixed(1) + 'px');
+    el.style.left = left.toFixed(1) + 'px';
+    el.style.top = top.toFixed(1) + 'px';
+  }
+  (function loop() {
+    requestAnimationFrame(loop);
+    const f = window.SpeechBubble ? SpeechBubble.frame(performance.now()) : null;
+    if (!f) {
+      if (el.style.opacity !== '0') { el.style.opacity = '0'; lastKey = ''; }
+      return;
+    }
+    const n = Math.floor(f.shown), page = f.page;
+    const key = f.pageIdx + ':' + n + ':' + (f.typing ? 1 : 0);
+    if (key !== lastKey) {
+      lastKey = key;
+      el.dir = f.rtl ? 'rtl' : 'ltr';
+      if (f.rtl) {
+        el.innerHTML = esc(page.slice(0, n)) + (f.typing ? '<span class="sb-caret"></span>' : '') + '<span class="sb-rest">' + esc(page.slice(n)) + '</span>';
+      } else {
+        const solid = Math.max(0, n - 2);
+        const t1 = page[solid] !== undefined && solid < n ? page.slice(solid, n) : '';
+        el.innerHTML = esc(page.slice(0, solid)) + (t1 ? '<span class="sb-tail">' + esc(t1) + '</span>' : '')
+          + (f.typing ? '<span class="sb-caret"></span>' : '') + '<span class="sb-rest">' + esc(page.slice(n)) + '</span>';
+      }
+    }
+    place();
+    el.style.opacity = String((f.alpha * f.pageAlpha).toFixed(3));
+    el.style.setProperty('--rise', (-f.rise).toFixed(1) + 'px');
+  })();
+}
+</script>
+
+<script src="js/11-office-scene.js"></script>
+<script src="js/12-speech-bubble.js"></script>
+<script src="js/13-wand.js"></script>
+<script src="js/14-autopilot.js"></script>
+<script src="js/15-game.js"></script>
+<script src="js/16-spell.js"></script>
+<script>
+  Autopilot.canFly = () => !scene3dFreeState;   // never move a viewer who is exploring on their own
+  Game.init({ role: 'viewer' });
+</script>
+</main></body></html>

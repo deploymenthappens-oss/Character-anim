@@ -1,0 +1,562 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Go live</title>
+<link rel="stylesheet" href="style.css">
+<script src="theme.js"></script>
+<!-- Sketchfab Viewer API SDK — required for programmatic office-scene control -->
+<script src="https://static.sketchfab.com/api/sketchfab-viewer-1.12.1.js"></script>
+</head><body><main>
+
+<div class="topbar">
+  <h1>Go live from this phone</h1>
+  <button class="theme-toggle" id="themeBtn" type="button"><span data-theme-icon>☀️</span><span data-theme-label>Light mode</span></button>
+</div>
+
+<div class="qbar" id="qbar">
+  <button id="qTalk" type="button" class="q" title="Script loop: the avatar keeps talking with your script. Off = idle, no talking">😶 Idle (no talking)</button>
+  <select id="qReplies" class="q" title="Reply to comments">
+    <option value="all">💬 Replies: all</option>
+    <option value="mention">💬 Replies: questions/@ only</option>
+    <option value="review">💬 Replies: hold for approval</option>
+    <option value="off">💬 Replies: off</option>
+  </select>
+  <button id="qStop" type="button" class="q" title="Stop the avatar from talking right now">🗯 Stop talking</button>
+  <button id="qMute" type="button" class="q" title="Mute the avatar's voice (mouth keeps moving)">🔊 Voice</button>
+  <button id="qMic"  type="button" class="q" title="Mute your microphone in the stream">🎙 Mic</button>
+  <select id="qCine" class="q" title="Auto camera moves">
+    <option value="off">🎥 Camera: static</option>
+    <option value="subtle">🎥 Camera: subtle</option>
+    <option value="cinematic" selected>🎥 Camera: cinematic</option>
+    <option value="dramatic">🎥 Camera: dramatic</option>
+  </select>
+  <button id="qIn"  type="button" class="q" title="Lean in">➕</button>
+  <button id="qOut" type="button" class="q" title="Lean out">➖</button>
+</div>
+
+<div class="stage-col">
+<div class="stage-wrap">
+  <canvas id="stage" width="1280" height="720"></canvas>
+  <iframe class="scene3d" id="scene3dFrame" title="3D scene" allow="autoplay; xr-spatial-tracking" loading="lazy"></iframe>
+  <video id="cam" class="tinycam" playsinline muted></video>
+  <canvas id="avatarCanvas" class="offscreen" width="900" height="900" aria-hidden="true"></canvas>
+
+  <!-- floating dock: stage layout + minimize + scene zoom -->
+  <div class="dock">
+    <button class="dock-btn" id="dockStageMode" type="button" title="Toggle centered stage vs. camera-corner layout">🎬 Center stage</button>
+    <select class="dock-select" id="bgTheme" title="Live background theme">
+      <option value="aurora" selected>Aurora</option>
+      <option value="midnight">Midnight</option>
+      <option value="sunset">Sunset</option>
+      <option value="studio">Studio</option>
+      <option value="neon">Neon grid</option>
+      <option value="bokeh">Bokeh lights</option>
+      <option value="studio-office-3d">🏢 Studio Office (3D, viewers only)</option>
+      <option value="hawkins-room">Hawkins room (Rive)</option>
+    </select>
+    <button class="dock-btn" id="dockScene3DNav" type="button" title="Switch your view of the room between first-person walking (WASD / arrows, drag to look) and orbit. Reloads the room." hidden>🚶 Walk mode</button>
+    <button class="dock-btn" id="dockScene3DFree" type="button" title="Let each viewer freely orbit the 3D room on their own, instead of just watching it autorotate" hidden>🔒 Free-roam: off</button>
+    <select class="dock-select" id="frameMode" title="How much of the character to show">
+      <option value="full" selected>Full body (legs)</option>
+      <option value="half">Half body (desk)</option>
+    </select>
+    <button class="dock-btn" id="dockLegs" type="button" title="Show or hide the character's legs">🦵 Legs: on</button>
+
+    <!-- ── Scene zoom: smooth spring zoom of the whole composited scene ── -->
+    <span class="dock-label" title="Zoom the whole scene in or out smoothly">🔍</span>
+    <button class="dock-btn" id="dockZoomIn"   type="button" title="Zoom in  (+10%, hold for continuous)">＋</button>
+    <button class="dock-btn" id="dockZoomReset" type="button" title="Reset zoom to 100%">100%</button>
+    <button class="dock-btn" id="dockZoomOut"  type="button" title="Zoom out (−10%, hold for continuous)">－</button>
+
+    <div class="dock-spacer"></div>
+    <button class="dock-btn" id="dockMinimize" type="button" title="Minimize the character to a small corner badge">⤡ Minimize</button>
+  </div>
+  <span class="stage-badge" id="providerBadge">rules</span>
+
+  <!-- LOCAL PREVIEW OVERLAY — only visible when the 3D-office iframe (.scene3d.on) is covering
+       the canvas. Mirrors the exact corner region that's going into the real broadcast so the
+       admin always sees a pixel-accurate preview of what viewers receive, even while the local
+       Sketchfab mirror is in front. Drawn by drawLocalPreviewCorner() in 04-render.js.
+       Hidden automatically whenever the iframe is not active (CSS :has selector). -->
+  <div id="localPreviewCorner" aria-hidden="true">
+    <canvas id="localPreviewCanvas"></canvas>
+    <div id="localPreviewLabel">● BROADCAST</div>
+  </div>
+</div><!-- /stage-wrap -->
+
+<!-- Walk pad: move around the 3D room without touching the scene. Shown only while the 3D room is selected.
+     Same as keyboard: ↑/↓ or W/S move, A/D strafe, ←/→ or Q/E turn, R/F up/down, Shift sprint. -->
+<div class="walkpad" id="walkPad" hidden>
+  <!-- Arrow keys (inverted-T like a keyboard): ↑ forward, ↓ back, ← / → turn -->
+  <div class="walkpad-group">
+    <span class="walkpad-title">Arrows</span>
+    <div class="walkpad-grid">
+      <span></span>
+      <button type="button" data-k="fwd"   title="Forward (↑ or W)">↑</button>
+      <span></span>
+      <button type="button" data-k="turnL" title="Turn left (← or Q)">←</button>
+      <button type="button" data-k="back"  title="Back (↓ or S)">↓</button>
+      <button type="button" data-k="turnR" title="Turn right (→ or E)">→</button>
+    </div>
+  </div>
+  <!-- WASD: W/S forward/back, A/D step sideways -->
+  <div class="walkpad-group">
+    <span class="walkpad-title">W A S D</span>
+    <div class="walkpad-grid">
+      <span></span>
+      <button type="button" data-k="fwd"   title="Forward (W or ↑)">W</button>
+      <span></span>
+      <button type="button" data-k="left"  title="Step left (A)">A</button>
+      <button type="button" data-k="back"  title="Back (S or ↓)">S</button>
+      <button type="button" data-k="right" title="Step right (D)">D</button>
+    </div>
+  </div>
+  <div class="walkpad-side">
+    <button type="button" data-k="up"   title="Up (R)">R ⤒</button>
+    <button type="button" data-k="down" title="Down (F)">F ⤓</button>
+    <button type="button" data-k="sprint" title="Hold to sprint (Shift)">⇧ Run</button>
+  </div>
+  <label class="walkpad-speed">Speed <input type="range" id="walkSpeed" min="0.5" max="8" step="0.5" value="2"></label>
+  <span class="walkpad-hint">Keys work when the page (not the room) has focus</span>
+</div>
+</div><!-- /stage-col -->
+
+<div class="sidebar">
+
+<!-- ═══════════════════════════════════════════════════════════ STREAM -->
+<div class="panel">
+  <div class="row">
+    <div><label for="name">Stream name</label><input id="name" value="mystream" autocapitalize="off" autocomplete="off"></div>
+    <div><label for="quality">Quality</label>
+      <select id="quality">
+        <option value="360">360p (~0.8 Mbps)</option>
+        <option value="720" selected>720p (~2.5 Mbps)</option>
+        <option value="1080">1080p (~4.5 Mbps)</option>
+      </select></div>
+  </div>
+  <div class="row">
+    <button id="flip" type="button">Flip camera</button>
+    <button id="go" type="button" class="go">Start streaming</button>
+  </div>
+  <span id="status">Idle</span>
+  <pre id="stats"></pre>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ STAGE LAYOUT -->
+<div class="panel">
+  <b>Stage layout</b> <span class="note">what's behind the character in the composited stream</span>
+  <div class="row">
+    <div><label for="stageMode">Layout</label>
+      <select id="stageMode">
+        <option value="camera" selected>Camera background, avatar in the corner</option>
+        <option value="center">Character centered, live background</option>
+      </select></div>
+    <div><label for="apos">Corner position</label>
+      <select id="apos">
+        <option value="right" selected>Bottom right</option>
+        <option value="left">Bottom left</option>
+        <option value="off">Hidden</option>
+      </select></div>
+  </div>
+  <div class="bg-mirror-row">
+    <label for="bgThemeSide">Background</label>
+    <select id="bgThemeSide" class="bg-mirror" title="Same as the background menu on the stage - use this one when the stage menu is hidden or covered"></select>
+  </div>
+  <div class="row">
+    <div><label for="asize">Character size</label><input id="asize" type="range" min="25" max="100" value="66"></div>
+  </div>
+  <!-- Scene zoom slider: mirrors the dock buttons, lets you fine-tune -->
+  <div class="row">
+    <div style="flex:1">
+      <label for="sceneZoomSlider">Scene zoom</label>
+      <input id="sceneZoomSlider" type="range" min="50" max="200" value="100" step="1"
+             title="Zoom the whole composited scene (50%–200%)">
+    </div>
+    <span id="sceneZoomLabel" style="align-self:center;min-width:3.5em;text-align:right;font-size:0.85em">100%</span>
+  </div>
+  <label class="check"><input id="camPip" type="checkbox" checked> In centered layout, show the camera as a small corner picture-in-picture</label>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ AVATAR -->
+<div class="panel">
+  <b>Avatar</b> <span class="note" id="avatarState">loading…</span>
+  <label class="check"><input id="monitor" type="checkbox"> Also play the avatar's voice on this phone (use headphones)</label>
+
+  <b>Entrance / exit</b>
+  <span class="note">character walks in from the left and rests at the right corner; walk-out reverses it</span>
+  <div class="row">
+    <button id="bEnter" type="button" class="go">🚪 Walk in</button>
+    <button id="bExit"  type="button">👋 Walk out</button>
+    <button id="bCenter" type="button" title="Move the character back to the middle of the stage">🎯 Recenter</button>
+  </div>
+  <label class="check"><input id="mAutoEnter" type="checkbox"> Walk in automatically when the avatar loads</label>
+
+  <b>Motion</b> <span class="note" id="motionState"></span>
+  <div class="row">
+    <button id="tGesture" type="button">Test gesture</button>
+    <button id="tWave"    type="button">Test wave</button>
+    <button id="tStop"    type="button">Stop motion</button>
+  </div>
+  <p class="note">Character gesture library (each button plays that one gesture on its own):</p>
+  <div class="gesture-grid">
+    <button id="btGlasses"   type="button">Glasses push</button>
+    <button id="btLean"      type="button">Lean in</button>
+    <button id="btShocked"   type="button">Shocked</button>
+    <button id="btThinking"  type="button">Thinking</button>
+    <button id="btNod"       type="button">Nod</button>
+    <button id="btShake"     type="button">Shake head</button>
+    <button id="btShrug"     type="button">Shrug</button>
+    <button id="btPresent"   type="button">Present</button>
+    <button id="btCelebrate" type="button">Celebrate</button>
+    <button id="btFoot"      type="button">Foot tap</button>
+    <button id="btShift"     type="button">Weight shift</button>
+    <button id="btBounce"    type="button">Bounce</button>
+    <button id="btHop"       type="button">Hop</button>
+    <button id="btJump"      type="button">Jump</button>
+    <button id="btMarch"     type="button">March</button>
+    <button id="btKick"      type="button">Side kick</button>
+    <button id="btStomp"     type="button">Stomp</button>
+    <button id="btDance"     type="button">Dance</button>
+  </div>
+
+  <!-- Hawkins room controls -->
+  <details id="roomSection">
+    <summary>
+      <b>Hawkins room</b>
+      <span class="note" id="roomInputStatus">select "Hawkins room (Rive)" as the background to load</span>
+      <span id="roomUpsideDownBadge" style="display:none;margin-left:8px;padding:2px 8px;border-radius:10px;background:#1a0a3a;color:#b48aff;font-size:0.78em;font-weight:600;">🌀 Upside Down</span>
+    </summary>
+
+    <p class="note">Click any button to fire/toggle that prop — same as the character gesture buttons above.</p>
+
+    <div class="row" style="margin-bottom:6px;">
+      <button id="roomBtnTunnel" type="button" class="go" style="flex:1;font-size:1em;">
+        🌀 Toggle Upside Down (Demogorgon)
+      </button>
+    </div>
+    <div class="row" style="margin-bottom:6px;gap:6px;">
+      <button id="roomBtnSpell" type="button" class="go" style="flex:1;font-size:1em;" title="Cinematic: the camera pushes in on the character while he conjures with the wand, then pulls out as the room flips. Runs on every viewer.">
+        🪄 Cast the Upside Down spell (cinematic)
+      </button>
+      <button id="roomBtnSpellPreview" type="button" class="ghost" title="Play the scene on this screen only - the room does not change">🎬 Preview</button>
+    </div>
+
+    <p class="note" style="margin:0 0 6px;">💡 Use <b>👁 Visible toggle</b> (or <b>🚪 Enter</b>) in the Demogorgon group below to show/hide the Demogorgon. Both Upside Down AND Visible must be on for it to appear.</p>
+
+    <div id="roomButtonGrid"></div>
+
+    <div class="row" style="margin-top:8px;">
+      <button id="roomAutopilot" type="button" title="Ambient idle life: slow random flicker">🌀 Autopilot: on</button>
+    </div>
+
+    <details style="margin-top:10px;">
+      <summary class="note">Advanced: fire any input by name (server broadcast)</summary>
+      <div class="row" style="margin-top:6px;">
+        <div>
+          <label for="roomInputSelect">Room input</label>
+          <select id="roomInputSelect" title="Pick a Hawkins-room input to manipulate">
+            <option value="">(load the Hawkins room background first)</option>
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <button id="roomInputFire" type="button">⚡ Fire / toggle</button>
+      </div>
+      <div class="row" id="roomSliderRow" style="display:none">
+        <div>
+          <label for="roomInputSlider">Value</label>
+          <input type="range" id="roomInputSlider" min="0" max="1" step="0.01" value="0">
+        </div>
+      </div>
+    </details>
+  </details>
+
+  <!-- ═══════ OFFICE SCENE INPUTS ═══════════════════════════════════════
+       Shown only when bg = "Studio Office (3D)". Controls broadcast to
+       every viewer's Sketchfab iframe via POST /office-input → SSE.     -->
+  <div class="bg-mirror-row" id="officeBgRow" style="display:none">
+    <label for="bgThemeOffice">3D room background</label>
+    <select id="bgThemeOffice" class="bg-mirror" title="Same as the stage background menu - pick another one to leave the 3D room"></select>
+  </div>
+  <details id="officeSection" class="office-panel" style="display:none" open>
+    <summary>
+      <b>Office scene inputs</b>
+      <span class="note" id="officeInputStatus">Every change is pushed live to all viewers</span>
+    </summary>
+    <div class="office-body">
+      <div class="office-head">
+        <span class="office-sync" id="officeSync" data-state="wait"><i></i><span id="officeApiState">API: waiting for scene…</span></span>
+        <span class="office-sent" id="officeSent"></span>
+      </div>
+
+      <div class="office-tabs" role="tablist" aria-label="Office scene controls">
+        <button type="button" role="tab" class="otab active" data-otab="objects">🧱 Objects<em id="oCountObjects"></em></button>
+        <button type="button" role="tab" class="otab" data-otab="cameras">🎥 Cameras<em id="oCountCameras"></em></button>
+        <button type="button" role="tab" class="otab" data-otab="colors">🎨 Colours<em id="oCountColors"></em></button>
+        <button type="button" role="tab" class="otab" data-otab="anim" id="officeAnimTab" hidden>🎞 Animations</button>
+      </div>
+
+      <!-- Objects: grouped chips, filter, per-group show/hide all -->
+      <div class="office-pane active" data-opane="objects">
+        <div class="office-tools" id="wandTools" style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
+          <label title="The avatar raises her arm and flicks a magic wand when you hide an object"><input type="checkbox" id="wandOn" checked> 🪄 Wand</label>
+          <label title="The avatar says a short line (e.g. 'Whoa, the lamp just disappeared! What's that?') while the wand flicks"><input type="checkbox" id="wandNarrate" checked> 🗣 Say something when it vanishes</label>
+          <label title="Delay before she speaks, so her voice lands on the flick">delay <input type="number" id="wandDelay" min="0" max="3000" step="50" value="250" style="width:64px"> ms</label>
+          <label title="On every vanish the camera glides in on the object, then back. One shot is computed here and sent to all viewers"><input type="checkbox" id="autoCam" checked> 🎥 Auto-pilot camera</label>
+          <label title="When the trick (wand + camera shot) plays: when an object disappears, when it appears, or both. The other direction is a plain flash."><b>🎩 Trick on</b>
+            <select id="wandTrick" style="width:auto"><option value="hide">disappearing</option><option value="show">appearing</option><option value="both">both</option></select></label>
+          <label title="How close the auto-pilot camera comes to the object"><b>🔭 Shot</b>
+            <select id="camPull" style="width:auto"><option value="0.88">wide</option><option value="0.72" selected>medium</option><option value="0.5">close</option></select></label>
+          <button type="button" class="ghost" id="wandTest" title="Play the wand on this screen only (nothing is hidden)">Test wand</button>
+        </div>
+        <div class="office-tools"><input type="search" id="officeNodeSearch" placeholder="Filter objects…" autocomplete="off"></div>
+        <div id="officeNodeGrid" class="office-scroll"><p class="office-empty">(waiting for Sketchfab API…)</p></div>
+      </div>
+
+      <!-- Cameras -->
+      <div class="office-pane" data-opane="cameras">
+        <p class="note" style="margin:0 0 8px">Orbit/walk to any angle, name it, save. Tapping a view flies every viewer's camera there.</p>
+        <div id="officeCameraPresets" class="office-scroll" style="max-height:220px"><p class="office-empty">(no presets yet)</p></div>
+        <div class="office-tools" style="margin-top:8px">
+          <input type="text" id="officePresetName" placeholder="e.g. desk, window, shelf…" maxlength="30">
+          <button id="officeSavePreset" type="button" class="go" style="width:auto">💾 Save view</button>
+        </div>
+        <p class="note" id="officePresetNote"></p>
+      </div>
+
+      <!-- Colours -->
+      <div class="office-pane" data-opane="colors">
+        <div class="office-tools"><input type="search" id="officeMatSearch" placeholder="Filter materials…" autocomplete="off"></div>
+        <div id="officeMaterialGrid" class="office-scroll"><p class="office-empty">(waiting for Sketchfab API…)</p></div>
+      </div>
+
+      <!-- Animations -->
+      <div class="office-pane" data-opane="anim" id="officeAnimSection">
+        <div id="officeAnimGrid" class="ogroup-chips" style="padding:0"></div>
+        <div class="office-anim-row">
+          <button id="officeAnimPlay"  type="button">▶ Play</button>
+          <button id="officeAnimPause" type="button">⏸ Pause</button>
+        </div>
+      </div>
+    </div>
+  </details>
+
+  <details id="waveTune">
+    <summary><b>Wave controls</b> <span class="note">(angles in degrees: 0 = right, -90 = up, ±180 = left)</span></summary>
+    <div id="tuneRows"></div>
+    <div class="row">
+      <button id="tPlay"  type="button">Play wave</button>
+      <button id="tReset" type="button">Reset</button>
+      <button id="tCopy"  type="button">Copy values</button>
+    </div>
+    <p class="note" id="tuneNote">Changes apply on the next wave and are kept in this browser.</p>
+  </details>
+
+  <details id="pointTune">
+    <summary><b>Pointing controls</b> <span class="note">(angles: 90 = arm down, 180 = out to the side, 270 = up)</span></summary>
+    <div id="pointRows"></div>
+    <div class="row">
+      <button id="pReset" type="button">Reset</button>
+      <button id="pCopy"  type="button">Copy values</button>
+    </div>
+    <p class="note" id="pointNote">Changes apply straight away and are kept in this browser.</p>
+  </details>
+
+  <label class="check"><input id="mComment" type="checkbox" checked> Wave as soon as a comment arrives</label>
+  <label class="check"><input id="mWave"    type="checkbox" checked> Wave when the avatar starts to reply</label>
+  <label class="check"><input id="mGesture" type="checkbox" checked> Head/arm gesture while replying</label>
+  <label class="check"><input id="mStop"    type="checkbox" checked> Stop the reply's movement when speech ends</label>
+  <label class="check"><input id="mLook"    type="checkbox" checked> Follow the mouse with the eyes and head</label>
+  <label class="check"><input id="mPoint"   type="checkbox" checked> Point at the mouse with the arm</label>
+  <label class="check"><input id="mCue"     type="checkbox" checked> Auto-play a matching gesture for keywords in replies</label>
+  <label class="check"><input id="mLegs"    type="checkbox" checked> Leg life while idle (weight shifts, foot fidgets)</label>
+
+  <b>Voice</b> <span class="note">shaped in this browser, before it goes into the stream</span>
+  <div class="row">
+    <div><label for="voiceEn">English voice (free neural, no key)</label>
+      <select id="voiceEn">
+        <option value="en-US-AriaNeural">Aria (US, warm)</option>
+        <option value="en-US-GuyNeural">Guy (US, male)</option>
+        <option value="en-GB-SoniaNeural">Sonia (UK)</option>
+      </select></div>
+    <div><label for="voiceAr">Arabic voice</label>
+      <select id="voiceAr">
+        <option value="ar-EG-SalmaNeural">سلمى (مصري)</option>
+        <option value="ar-EG-ShakirNeural">شاكر (مصري، ذكر)</option>
+        <option value="ar-SA-ZariyahNeural">زارية (سعودي)</option>
+        <option value="ar-SA-HamedNeural">حامد (سعودي، ذكر)</option>
+      </select></div>
+  </div>
+  <p class="note">Picks the server's Edge TTS voice for each language (falls back to espeak-ng offline if Edge is unreachable). Choosing a voice, not cloning one.</p>
+  <div id="voiceRows"></div>
+  <label class="check"><input id="vFilter" type="checkbox" checked> Warm filter (body + clearer consonants)</label>
+  <label class="check"><input id="vComp"   type="checkbox" checked> Even out loud and quiet parts</label>
+  <div class="row">
+    <button id="vTest"  type="button">Test voice</button>
+    <button id="vReset" type="button">Reset voice</button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ PRODUCT SPOTLIGHT -->
+<div class="panel" id="productPanel">
+  <b>Product spotlight</b>
+  <span class="note">push a product card onto every viewer's screen — shows name, price, note, and a scannable QR</span>
+
+  <!-- Quick-swap preset buttons -->
+  <div class="row" id="productPresetRow" style="gap:6px;flex-wrap:wrap;"></div>
+
+  <div class="row" style="margin-top:4px;">
+    <div style="flex:2"><label for="productName">Product name</label>
+      <input id="productName" type="text" maxlength="120" placeholder="e.g. Blue Canvas Sneaker — Size 40–45" autocomplete="off"></div>
+    <div style="flex:1"><label for="productPrice">Price</label>
+      <input id="productPrice" type="text" maxlength="40" placeholder="e.g. $49 / 179 EGP" autocomplete="off"></div>
+  </div>
+  <div class="row">
+    <div style="flex:1"><label for="productNote">Short note <span class="note">(optional — limited stock, color options, etc.)</span></label>
+      <input id="productNote" type="text" maxlength="200" placeholder="e.g. Only 3 left — ships same day!" autocomplete="off"></div>
+  </div>
+  <div class="row">
+    <div style="flex:1"><label for="productUrl">Product URL <span class="note">(optional — generates QR code)</span></label>
+      <input id="productUrl" type="url" maxlength="500" placeholder="https://yourstore.com/product/…" autocomplete="off"></div>
+  </div>
+  <div class="row" style="align-items:center;gap:16px;">
+    <label style="display:flex;align-items:center;gap:6px;font-weight:normal;">
+      <input id="productBestSeller" type="checkbox" style="width:auto;">
+      🔥 Best seller <span class="note">(bigger avatar celebration + badge on the card)</span>
+    </label>
+    <div style="flex:0 0 auto;display:flex;align-items:center;gap:6px;">
+      <label for="productDealMin" style="font-weight:normal;white-space:nowrap;">⏱ Deal timer</label>
+      <input id="productDealMin" type="number" min="0" max="1440" step="1" placeholder="min" style="width:64px;">
+      <span class="note">min (optional countdown)</span>
+    </div>
+  </div>
+  <div class="row">
+    <button id="productPush" type="button" class="go">📦 Push to scene</button>
+    <button id="productHide" type="button">✕ Hide card</button>
+  </div>
+
+  <!-- Live preview of QR -->
+  <div id="productQrPreview" style="display:none;margin-top:6px;">
+    <span class="note">QR preview: </span>
+    <img id="productQrImg" src="" alt="QR code" style="width:64px;height:64px;border-radius:6px;vertical-align:middle;background:#fff;padding:3px;">
+  </div>
+
+  <p class="note" id="productState">No product on screen.</p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ SCRIPT -->
+<div class="panel">
+  <b>Reference script</b>
+  <span class="note">the avatar keeps reciting this on a loop until a comment interrupts it</span>
+  <div id="scriptRows">
+    <label for="scriptText">Lines (one per line)</label>
+    <textarea id="scriptText" spellcheck="false"></textarea>
+  </div>
+  <div class="row">
+    <div><label for="personaText">Persona (for AI replies)</label><input id="personaText" placeholder="a friendly, witty cartoon co-host"></div>
+  </div>
+  <div class="row">
+    <button id="scriptSave" type="button" class="go">Review changes…</button>
+    <label class="check"><input id="loopToggle" type="checkbox"> Script speaking: loop when idle</label>
+  </div>
+  <div id="scriptConfirm" class="confirm-box" hidden>
+    <b>Apply this script change?</b>
+    <p class="note">This replaces the lines the avatar recites when idle. Review below, then confirm.</p>
+    <pre id="scriptDiff"></pre>
+    <div class="row">
+      <button id="scriptApply"  type="button" class="go">Apply</button>
+      <button id="scriptCancel" type="button">Cancel</button>
+    </div>
+  </div>
+  <p class="note" id="scriptNote"></p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ ADMIN -->
+<div class="panel">
+  <b>Admin access</b>
+  <span class="note">required once the server has ADMIN_TOKEN set — without it, gestures/background/motion/stop/script/voice/approvals are all rejected with 401</span>
+  <div class="row">
+    <div><label for="adminTokenInput">Admin token</label>
+      <input id="adminTokenInput" type="password" autocomplete="off" placeholder="paste the ADMIN_TOKEN value"></div>
+  </div>
+  <p class="note" id="adminState"></p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ MODERATION -->
+<div class="panel">
+  <b>Moderation &amp; voice</b>
+  <span class="note">stop the character from speaking either channel, and choose whether each one uses its voice</span>
+  <div class="row">
+    <div><label for="scriptVoiceToggle">Script</label>
+      <label class="check"><input id="scriptVoiceToggle" type="checkbox" checked> Has a voice (off = silent captions only)</label></div>
+    <div><label for="scriptProtectToggle">&nbsp;</label>
+      <label class="check"><input id="scriptProtectToggle" type="checkbox"> Don't let comments interrupt the script</label></div>
+  </div>
+  <div class="row">
+    <div><label for="repliesModeSel">Comments</label>
+      <select id="repliesModeSel">
+        <option value="all">Reply automatically to all comments</option>
+        <option value="mention">Reply automatically to questions / @mentions only</option>
+        <option value="review">Hold every comment for my approval</option>
+        <option value="off">Stop commenting entirely</option>
+      </select></div>
+    <div><label for="repliesVoiceToggle">&nbsp;</label>
+      <label class="check"><input id="repliesVoiceToggle" type="checkbox" checked> Replies have a voice</label></div>
+  </div>
+  <p class="note">Both channels can be silenced independently. A comment being held for review is never spoken until you approve it below.</p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ PENDING -->
+<div class="panel">
+  <b>Held for approval</b> <span class="note" id="pendingState">nothing waiting</span>
+  <div id="pendingList"></div>
+  <p class="note" id="queueState"></p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ COMMENTS -->
+<div class="panel">
+  <b>Comments</b> <span class="note" id="chatState"></span>
+  <div id="chatlog" aria-live="polite"></div>
+  <div class="chatrow">
+    <input name="who" id="chatname" aria-label="Your name" autocomplete="off" maxlength="24">
+    <input name="msg" id="chatmsg"  aria-label="Comment" placeholder="Type a comment…" autocomplete="off" maxlength="200">
+    <button id="chatsend" type="button" class="go">Send</button>
+  </div>
+  <p class="note" id="mode"></p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ LOG -->
+<div class="panel"><b>Log</b><pre id="log"></pre></div>
+<p class="note">Keep this tab open and the screen on while streaming. Mobile browsers pause the camera and the avatar when the page is hidden.</p>
+
+</div><!-- /sidebar -->
+
+<!-- external libs -->
+<script src="lipsync.js"></script>
+<script src="avatar-orchestra.js"></script>
+<script src="avatar.js"></script>
+<script src="hawkins-room.js"></script>
+<script src="product-card.js"></script>
+<script src="chat.js"></script>
+
+<!-- app modules, loaded in dependency order (classic shared global scope) -->
+<script src="js/00-state.js"></script>
+<script src="js/01-walk.js"></script>
+<script src="js/02-room.js"></script>
+<script src="js/03-background.js"></script>
+<script src="js/04-render.js"></script>
+<script src="js/05-speech.js"></script>
+<script src="js/06-tuners.js"></script>
+<script src="js/07-camera-whip.js"></script>
+<script src="js/08-dock-quickbar.js"></script>
+<script src="js/09-init-boot.js"></script>
+<script src="js/10-product.js"></script>
+<script src="js/11-office-scene.js"></script>
+<script src="js/12-speech-bubble.js"></script>
+<script src="js/13-wand.js"></script>
+<script src="js/14-autopilot.js"></script>
+<script src="js/15-game.js"></script>
+<script src="js/16-spell.js"></script>
+<script>Game.init({ role: 'host' });</script>
+</main></body></html>

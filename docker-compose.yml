@@ -1,0 +1,63 @@
+services:
+  mediamtx:
+    image: bluenviron/mediamtx:latest
+    container_name: mediamtx
+    restart: unless-stopped
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml:ro
+    ports:
+      - "8189:8189/udp"   # WebRTC media (main path)
+      - "8189:8189/tcp"   # WebRTC media over TCP (fallback if UDP is blocked)
+      - "8888:8888"       # HLS (optional: VLC / other players)
+      - "8554:8554"       # RTSP (optional: ffplay / VLC)
+    # Port 8889 (WHIP/WHEP HTTP) is NOT published on purpose.
+    # nginx reaches it internally and adds HTTPS, because phone browsers
+    # only allow the camera on https:// pages.
+
+  chat:
+    build: ./chat
+    container_name: stream-chat
+    restart: unless-stopped
+    environment:
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_MODEL: ${GROQ_MODEL:-openai/gpt-oss-20b}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-haiku-4-5-20251001}
+      FREE_LLM: ${FREE_LLM:-on}
+      FREE_LLM_ORDER: ${FREE_LLM_ORDER:-llm7,ovh,kilo}
+      REPLY_CACHE_MS: ${REPLY_CACHE_MS:-45000}
+      AVATAR_PERSONA: ${AVATAR_PERSONA:-a friendly, witty cartoon co-host}
+      AVATAR_SCRIPT: ${AVATAR_SCRIPT:-}
+      AVATAR_LOOP: ${AVATAR_LOOP:-on}
+      AVATAR_REPLIES: ${AVATAR_REPLIES:-all}
+      AVATAR_IDLE_MS: ${AVATAR_IDLE_MS:-1100}
+      AVATAR_AR_DIALECT: ${AVATAR_AR_DIALECT:-egy}
+      TTS_ENGINE: ${TTS_ENGINE:-edge}
+      TTS_VOICE_EN_EDGE: ${TTS_VOICE_EN_EDGE:-en-US-AriaNeural}
+      TTS_VOICE_AR_EDGE: ${TTS_VOICE_AR_EDGE:-ar-EG-SalmaNeural}
+      TTS_EDGE_RATE: ${TTS_EDGE_RATE:-0}
+      TTS_EDGE_PITCH: ${TTS_EDGE_PITCH:-0}
+      TTS_VOICE_EN: ${TTS_VOICE_EN:-en-us+f3}
+      TTS_VOICE_AR: ${TTS_VOICE_AR:-ar+f3}
+      TTS_SPEED: ${TTS_SPEED:-138}
+      TTS_PITCH: ${TTS_PITCH:-72}
+      TTS_AMP: ${TTS_AMP:-190}
+      TTS_GAP: ${TTS_GAP:-4}
+    # not published: only nginx talks to it
+
+  web:
+    image: nginx:alpine
+    container_name: stream-web
+    restart: unless-stopped
+    depends_on:
+      - mediamtx
+      - chat
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./web:/usr/share/nginx/html:ro
+      - ./certs:/certs:ro
+    ports:
+      - "8443:8443"

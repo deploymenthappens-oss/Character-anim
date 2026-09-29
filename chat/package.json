@@ -1,0 +1,10 @@
+{
+  "name": "stream-avatar-chat",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Chat + avatar brain: free/keyed LLM replies (llm.js), free neural TTS (edge.js) with espeak-ng fallback.",
+  "main": "server.js",
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

@@ -1,0 +1,586 @@
+/* ===================================================================================
+   Modern glass UI - shared by index.html, publish.html and view.html.
+   Theming: a `data-theme="dark"|"light"` attribute on <html> (set by theme.js) drives
+   every color below through CSS variables, so both pages and both themes stay in sync.
+   =================================================================================== */
+:root{
+  --radius:16px; --radius-sm:10px; --radius-lg:22px;
+  --action:#7c9cff; --action-ink:#0c1024; --live:#ff4d6d; --ok:#2fd68a; --warn:#ffb545; --bad:#ff5a6a;
+  --blur:18px;
+  --dur:.22s;
+}
+:root[data-theme="dark"]{
+  --bg-0:#0a0c14; --bg-1:#12162a; --bg-2:#1a1030;
+  --ink:#eef1ff; --muted:#9aa3c4; --line:rgba(255,255,255,.10);
+  --glass:rgba(24,27,48,.55); --glass-strong:rgba(20,23,42,.78); --glass-soft:rgba(255,255,255,.05);
+  --field:rgba(255,255,255,.06); --field-line:rgba(255,255,255,.14);
+  --shadow:0 8px 32px rgba(0,0,0,.45);
+  --stage-bg-a:#1b1440; --stage-bg-b:#0a0c1c; --stage-bg-c:#2a1554;
+  color-scheme:dark;
+  --opt-bg:#171a2e; --opt-ink:#eef1ff; --opt-hover:#2a3160; --opt-line:rgba(255,255,255,.14);
+  --chev:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%23c9d1ff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --pop-shadow:0 14px 40px rgba(0,0,0,.55);
+}
+:root[data-theme="light"]{
+  --bg-0:#eef1fb; --bg-1:#e4e9fb; --bg-2:#dfe7ff;
+  --ink:#151827; --muted:#5b6178; --line:rgba(20,24,50,.10);
+  --glass:rgba(255,255,255,.55); --glass-strong:rgba(255,255,255,.75); --glass-soft:rgba(20,24,50,.04);
+  --field:rgba(255,255,255,.7); --field-line:rgba(20,24,60,.14);
+  --shadow:0 8px 28px rgba(30,40,90,.14);
+  --stage-bg-a:#c9d4ff; --stage-bg-b:#eef1fb; --stage-bg-c:#ffd9ec;
+  color-scheme:light;
+  --opt-bg:#ffffff; --opt-ink:#151827; --opt-hover:#dfe6ff; --opt-line:rgba(20,24,60,.16);
+  --chev:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%23444a68' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --pop-shadow:0 14px 36px rgba(30,40,90,.22);
+}
+/* Legacy names some inline styles in publish.html still use (--border / --input-bg / --fg were never defined,
+   so those inputs fell back to browser defaults and looked wrong in one of the two themes). */
+:root{--border:var(--field-line);--input-bg:var(--field);--fg:var(--ink)}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;color:var(--ink);
+  font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  padding:max(16px,env(safe-area-inset-top)) 16px calc(32px + env(safe-area-inset-bottom));
+  background:
+    radial-gradient(1200px 800px at 85% -10%, var(--bg-2), transparent 60%),
+    radial-gradient(900px 700px at -10% 10%, var(--bg-1), transparent 55%),
+    var(--bg-0);
+  background-attachment:fixed;
+  transition:background-color var(--dur) ease, color var(--dur) ease;
+}
+main{max-width:760px;margin:0 auto}
+h1{font-size:1.5rem;letter-spacing:-.01em;margin:8px 0 14px;display:flex;align-items:center;gap:10px}
+a{color:var(--action)}
+.note{color:var(--muted);font-size:.9rem}
+
+/* ---------- top bar: title + theme toggle, shared shape on every page ---------- */
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px}
+.topbar h1{margin:0}
+.theme-toggle{
+  display:flex;align-items:center;gap:8px;width:auto;padding:9px 14px;border-radius:999px;
+  background:var(--glass);border:1px solid var(--line);backdrop-filter:blur(var(--blur));-webkit-backdrop-filter:blur(var(--blur));
+  color:var(--ink);font-size:.85rem;font-weight:600;cursor:pointer;box-shadow:var(--shadow);
+  transition:transform var(--dur) ease, background var(--dur) ease;
+}
+.theme-toggle:hover{transform:translateY(-1px)}
+.theme-toggle span[data-theme-icon]{font-size:1rem;line-height:1}
+
+/* ---------- glass panel (the workhorse card) ---------- */
+.panel{
+  background:var(--glass);border:1px solid var(--line);border-radius:var(--radius);
+  padding:16px;margin:14px 0;backdrop-filter:blur(var(--blur));-webkit-backdrop-filter:blur(var(--blur));
+  box-shadow:var(--shadow);
+}
+.panel>b{font-size:1rem;letter-spacing:.01em}
+.row{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0}
+.row>*{flex:1;min-width:130px}
+label{display:block;color:var(--muted);font-size:.82rem;margin-bottom:4px;font-weight:600}
+
+input,select,button{
+  font:inherit;padding:12px 13px;border-radius:var(--radius-sm);border:1px solid var(--field-line);
+  background:var(--field);color:var(--ink);width:100%;transition:border-color var(--dur),box-shadow var(--dur),transform var(--dur);
+}
+button{cursor:pointer;font-weight:600}
+button:hover{border-color:var(--action)}
+button:active{transform:scale(.98)}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--action);outline-offset:2px}
+button.go{background:linear-gradient(135deg,var(--action),#a06bff);border-color:transparent;color:#fff;font-weight:700;box-shadow:0 6px 20px rgba(124,156,255,.35)}
+button.live{background:linear-gradient(135deg,var(--live),#ff7a5c);border-color:transparent;color:#fff;font-weight:700;box-shadow:0 0 0 rgba(255,77,109,.5);animation:livepulse 2s infinite}
+@keyframes livepulse{0%,100%{box-shadow:0 0 0 0 rgba(255,77,109,.45)}50%{box-shadow:0 0 0 8px rgba(255,77,109,0)}}
+button:disabled,input:disabled,select:disabled{opacity:.5;cursor:not-allowed}
+button.ghost{background:transparent;border:1px solid var(--field-line)}
+button.small{padding:8px 10px;font-size:.85rem;width:auto}
+
+#status{display:inline-block;padding:6px 14px;border-radius:999px;background:var(--glass-soft);font-weight:700;font-size:.85rem;border:1px solid var(--line)}
+#status.ok{background:rgba(47,214,138,.16);color:var(--ok);border-color:rgba(47,214,138,.3)}
+#status.live{background:linear-gradient(135deg,var(--live),#ff7a5c);color:#fff;border-color:transparent}
+#status.warn{background:rgba(255,181,69,.16);color:var(--warn);border-color:rgba(255,181,69,.3)}
+#status.bad{background:rgba(255,90,106,.16);color:var(--bad);border-color:rgba(255,90,106,.3)}
+
+pre{white-space:pre-wrap;word-break:break-word;font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;color:var(--muted);margin:8px 0 0}
+#stats{color:var(--ink);min-height:3.2em}
+#log{max-height:180px;overflow:auto}
+
+/* ---------- the stage: centered avatar over a live animated background ---------- */
+.stage-wrap{position:relative;border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);border:1px solid var(--line)}
+canvas#stage{display:block;width:100%;height:auto;background:#000;border-radius:var(--radius-lg)}
+video{display:block;width:100%;aspect-ratio:16/9;object-fit:contain;background:#000;border-radius:var(--radius-lg)}
+
+/* ---------- landscape / wide layout: the character stays fully on screen, never scrolled away ----------
+   On phones in portrait everything still stacks top-to-bottom exactly as before (no HTML/behavior change).
+   From a landscape phone upward, main becomes a 2-column grid: the stage (character) pins to the left and
+   stays pinned via position:sticky while only the right-hand `.sidebar` (controls/chat/log) scrolls - so
+   manipulating the character or watching it react never requires scrolling up and down to find it. */
+@media (min-width:760px) and (orientation:landscape), (min-width:1050px){
+  body:has(.sidebar){padding-left:max(20px,env(safe-area-inset-left));padding-right:max(20px,env(safe-area-inset-right))}
+  main:has(> .sidebar){
+    max-width:min(1600px,96vw);
+    display:grid;grid-template-columns:minmax(380px,1.35fr) minmax(320px,420px);
+    gap:16px;align-items:start;
+  }
+  main:has(> .sidebar) .topbar{grid-column:1 / -1}
+  main:has(> .sidebar) .stage-wrap{
+    position:sticky;top:max(12px,env(safe-area-inset-top));
+    align-self:start;max-height:calc(100dvh - 24px);
+  }
+  main:has(> .sidebar) canvas#stage,
+  main:has(> .sidebar) video{max-height:calc(100dvh - 24px);width:100%;object-fit:contain}
+  main:has(> .sidebar) .sidebar{
+    max-height:calc(100dvh - 24px);overflow-y:auto;overscroll-behavior:contain;
+    padding-right:4px;scrollbar-width:thin;
+  }
+  main:has(> .sidebar) .sidebar::-webkit-scrollbar{width:8px}
+  main:has(> .sidebar) .sidebar::-webkit-scrollbar-thumb{background:var(--line);border-radius:99px}
+}
+@media (min-width:1300px) and (orientation:landscape){
+  main:has(> .sidebar){grid-template-columns:minmax(460px,1.6fr) minmax(340px,440px)}
+}
+
+/* floating glass admin dock, overlaid on the stage: theme, layout, background, minimize */
+.dock{
+  position:absolute;top:10px;left:10px;right:10px;display:flex;gap:8px;flex-wrap:wrap;
+  pointer-events:none;                 /* only its children (the buttons) are clickable */
+}
+.dock>*{pointer-events:auto}
+.dock-btn{
+  display:flex;align-items:center;gap:6px;padding:8px 12px;border-radius:999px;
+  background:var(--glass-strong);border:1px solid rgba(255,255,255,.18);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  color:#fff;font-size:.8rem;font-weight:600;cursor:pointer;width:auto;box-shadow:0 4px 16px rgba(0,0,0,.35);
+  transition:transform var(--dur) ease, background var(--dur) ease;
+}
+.dock-btn:hover{transform:translateY(-1px);background:rgba(124,156,255,.35)}
+.dock-btn.active{background:linear-gradient(135deg,var(--action),#a06bff);border-color:transparent}
+.dock-spacer{flex:1 1 auto}
+.dock select.dock-select{
+  width:auto;padding:8px 10px;border-radius:999px;background:var(--glass-strong);color:#fff;
+  border:1px solid rgba(255,255,255,.18);font-size:.8rem;font-weight:600;
+}
+.stage-badge{
+  position:absolute;bottom:10px;left:10px;padding:5px 11px;border-radius:999px;font-size:.72rem;font-weight:700;
+  background:var(--glass-strong);color:#fff;border:1px solid rgba(255,255,255,.16);letter-spacing:.02em;
+}
+.stage-badge.live{background:linear-gradient(135deg,var(--live),#ff7a5c);border-color:transparent}
+.stage-badge.groq::before{content:'⚡ ';}
+.stage-badge.claude::before{content:'✦ ';}
+#scene3dHint{left:auto;right:10px;bottom:10px;z-index:3;pointer-events:none}
+.walk-hint{animation:tiltPulse 2.6s ease-in-out infinite;transition:opacity .5s ease,transform .5s ease}
+.walk-hint.faded{opacity:0;transform:translateY(4px);animation:none}
+.stage-badge.free::before{content:'☁ ';}
+.stage-badge.rules::before{content:'▪ ';}
+.stage-badge.tilt-hint{left:auto;right:10px;cursor:pointer;border:none;animation:tiltPulse 2.2s ease-in-out infinite}
+@keyframes tiltPulse{0%,100%{opacity:.85}50%{opacity:1}}
+
+/* ---------- chat ---------- */
+#chatlog{height:200px;overflow:auto;background:var(--glass-soft);border:1px solid var(--line);border-radius:var(--radius-sm);padding:10px;font-size:.93rem}
+.msg{padding:4px 2px;word-break:break-word}
+.msg b{margin-right:4px}
+.msg.bot b{color:var(--action)}
+.msg.bot{background:rgba(124,156,255,.14);border-radius:8px;padding:5px 9px;margin:3px 0}
+.msg.bot.baseline{opacity:.72}
+.msg.bot.baseline b{color:var(--muted)}
+.chatrow{display:flex;gap:8px;margin-top:10px}
+.chatrow input[name=msg]{flex:1;min-width:0}
+.chatrow input[name=who]{width:7.5rem;flex:none}
+.chatrow button{width:auto;flex:none}
+input[type=range]{padding:0;height:40px;accent-color:var(--action)}
+.check{display:flex;align-items:center;gap:8px;color:var(--ink);font-size:.93rem}
+.check input{width:auto;accent-color:var(--action)}
+.offscreen{position:fixed;left:-9999px;top:0;pointer-events:none}
+
+/* pure-virtual avatar stage (view.html): background + avatar canvases layered, no video element.
+   3/4 here is only a placeholder shown before the rig has loaded - view.html overwrites this with the
+   character's real aspect ratio via JS once known, so the box always matches the character's own
+   proportions exactly (no letterboxing, no wasted space) instead of guessing a fixed shape that's
+   usually wrong for a standing figure. max-height keeps it from growing absurdly tall on short/landscape
+   viewports where width no longer is the limiting dimension. */
+.avatar-stage{position:relative;width:100%;aspect-ratio:3/4;max-height:82dvh;margin:0 auto;border-radius:var(--radius-lg);overflow:hidden;background:#000;
+  --avatar-zoom:1.12; /* fallback fill amount before onMotion's first SSE event sets the real one (see view.html) */
+  --avatar-walk-x:0%; /* horizontal offset (% of the character's own box) while walking in - see startWalkIn() in view.html; 0% = centered */
+}
+.avatar-stage canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.avatar-stage canvas.bg{z-index:1;transform:translate(var(--cbx,0px),var(--cby,0px)) scale(var(--cbs,1));transform-origin:50% 50%}   /* --cb*: Spell camera (js/16-spell.js), unset = no effect */
+.avatar-stage .scene3d{position:absolute;inset:0;z-index:1;border:0;width:100%;height:100%;opacity:0;pointer-events:none;transition:opacity .38s ease}
+.avatar-stage .scene3d.on{opacity:1}
+.avatar-stage .scene3d.free{pointer-events:auto}
+/* object-fit:contain is the actual fix for the blurred/stretched limbs: the canvas's own internal pixel
+   resolution has its own aspect ratio (computed from the character in avatar.js), which almost never
+   matches the box's CSS aspect ratio. Without this, the browser force-stretches the image non-uniformly
+   to fill the box exactly - warping hands/arms. object-fit:contain scales it proportionally instead,
+   centered in the box, so nothing gets distorted no matter what shape the container is.
+   The extra transform:scale() on top is the permanent (not a mobile-only breakpoint hack) fix for the
+   character floating in the middle of the box with background showing all around him on every screen
+   size, desktop included: it crops in a bit past the reach-padding avatar.js reserves around the
+   character (see the VIEW-padding comment there), so he actually fills the card. --avatar-zoom is set
+   live from the publisher's "Character size" control (onMotion in view.html) and .avatar-stage still
+   clips with overflow:hidden, so a wide sideways gesture can graze the frame edge rather than spill out. */
+.avatar-stage canvas.avatar{z-index:2;object-fit:contain;transform:translate(var(--cax,0px),var(--cay,0px)) scale(var(--cas,1)) translateX(var(--avatar-walk-x)) scale(var(--avatar-zoom));transform-origin:50% 100%}
+.avatar-stage.spell-cine #viewSpeechBubble,.avatar-stage.spell-cine .gm-layer{opacity:0;transition:opacity .3s}
+.char-panel-head,.moves-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:2px 0}
+.moves-head{margin-top:10px}
+/* Scroll-snapping chip strip: one thumb swipe reaches all 15 moves on a phone without the panel
+   growing tall (a wrapped flex grid pushes the comments panel below the fold on small screens).
+   -webkit-overflow-scrolling:touch keeps momentum scrolling smooth on iOS Safari specifically. */
+.test-row{
+  display:flex;gap:8px;margin-top:8px;padding:2px 2px 10px;
+  overflow-x:auto;overflow-y:hidden;scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch;
+  scrollbar-width:thin;
+}
+.test-row::-webkit-scrollbar{height:6px}
+.test-row::-webkit-scrollbar-thumb{background:var(--line);border-radius:99px}
+.chip{
+  scroll-snap-align:start;flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:2px;
+  min-width:64px;padding:10px 8px;border-radius:var(--radius-sm);
+  background:var(--glass-soft);border:1px solid var(--line);color:var(--ink);font:inherit;font-size:.78rem;
+  cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;
+  transition:transform .18s cubic-bezier(.34,1.56,.64,1),background-color .18s ease,border-color .18s ease;
+}
+.chip:active{transform:scale(.92)}
+.chip:disabled{opacity:.4;cursor:not-allowed;transform:none}
+.chip-emoji{font-size:1.4rem;line-height:1}
+.chip-label{white-space:nowrap;text-transform:capitalize}
+/* Brief "fired" flash on tap - the ease-out bounce is the local feedback; the SSE gesture event that
+   actually drives the avatar (see onGesture() in view.html) can lag it by up to GESTURE_RETRY_MS, so
+   this is what makes the tap itself feel instant even on a slow connection. */
+.chip-fired{background:color-mix(in srgb, var(--action) 35%, var(--glass-soft));border-color:var(--action);transform:scale(1.08)}
+.tinycam{position:fixed;right:0;bottom:0;width:2px;height:2px;opacity:.01;pointer-events:none}
+.stage-wrap .scene3d{position:absolute;inset:0;z-index:1;border:0;width:100%;height:100%;opacity:0;pointer-events:none;transition:opacity .38s ease}
+.stage-wrap .scene3d.on{opacity:1;pointer-events:auto}
+.stage-wrap .scene3d.free{pointer-events:auto}
+
+/* ── LOCAL PREVIEW CORNER — mirrors the broadcast corner into the admin's
+      own screen while the Sketchfab iframe is covering the canvas.
+      z-index:3 keeps it above the iframe (z-index:1) and the canvas (z-index:0).
+      Only shown when the 3D iframe is actively .on (CSS :has selector).
+      Pointer-events:none so it never interferes with iframe drag/click. ── */
+#localPreviewCorner{
+  position:absolute;
+  bottom:10px;right:10px;
+  z-index:3;
+  display:none;          /* hidden by default; shown via :has below */
+  flex-direction:column;
+  align-items:flex-end;
+  gap:4px;
+  pointer-events:none;
+}
+.stage-wrap:has(.scene3d.on) #localPreviewCorner{display:flex}
+#localPreviewCanvas{
+  border-radius:8px;
+  border:2px solid rgba(255,80,80,0.75);
+  box-shadow:0 2px 12px rgba(0,0,0,0.6);
+  height:auto;
+  /* Size is set dynamically in JS to match the actual broadcast corner */
+  display:block;
+  background:rgba(0,0,0,.3);
+}
+#localPreviewLabel{
+  font-size:9px;font-weight:700;letter-spacing:.08em;
+  color:rgba(255,80,80,0.9);
+  text-shadow:0 1px 3px #000;
+  text-align:right;
+  padding:0 2px;
+}
+
+/* Mobile: every chip stays a comfortable ≥44px tap target (Apple/Google's own minimum), and the strip
+   gets a touch-friendlier gap since fingers are less precise than a mouse. */
+@media (max-width:759px){
+  .chip{min-width:60px;min-height:56px;padding:9px 6px}
+  .chip-emoji{font-size:1.3rem}
+  .chip-label{font-size:.72rem}
+}
+
+/* ---------- mobile: give the stage full priority - bleed the CARD out to the true screen edges (it
+   cancels out body's fixed 16px side padding, so it stays exact at any viewport width with no
+   scrollbar/overflow edge cases). This is what makes the card itself fill the phone's width; the
+   character's own fill amount is the --avatar-zoom rule above, which now applies at every size, not
+   just here. Scoped to the same width the single-column layout owns (below the point where the
+   landscape/tablet grid further up takes over), so tablets/desktop are untouched. */
+@media (max-width:759px){
+  main:has(.stage-wrap){max-width:none}
+  .stage-wrap{
+    width:calc(100% + 32px);
+    margin:0 -16px;
+    border-radius:0;
+  }
+  .avatar-stage{border-radius:0;max-height:78dvh;--avatar-zoom:1.2}   /* was 1.35: the character is a bit smaller on phones */
+}
+@media (max-width:520px){
+  .chatrow{flex-wrap:wrap}
+  .chatrow input[name=who]{flex:1 1 100%;width:auto}
+  .dock{position:static;padding:8px;background:var(--glass-strong);border-radius:0 0 var(--radius) var(--radius)}
+}
+
+/* ---------- wave / pointing / voice tuning ---------- */
+details#waveTune,details#pointTune{margin:10px 0;padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--glass-soft)}
+details#waveTune summary,details#pointTune summary{cursor:pointer;font-weight:600}
+#voiceRows{margin:6px 0 2px}
+.tune{display:grid;grid-template-columns:9.5rem 1fr 4.6rem;gap:8px;align-items:center;margin:5px 0}
+.tune label{margin:0}
+.tune input[type=number]{padding:6px;text-align:right}
+.tune input[type=range]{height:26px}
+
+/* ---------- gesture library grid ---------- */
+.gesture-grid{display:flex;flex-wrap:wrap;gap:8px}
+.gesture-grid button{width:auto;flex:1 1 auto;min-width:100px}
+
+/* ---------- landing page cards ---------- */
+.card-link{display:block;background:var(--glass);border:1px solid var(--line);border-radius:var(--radius);
+  padding:16px;margin:12px 0;backdrop-filter:blur(var(--blur));-webkit-backdrop-filter:blur(var(--blur));
+  box-shadow:var(--shadow);text-decoration:none;color:var(--ink);transition:transform var(--dur) ease}
+.card-link:hover{transform:translateY(-2px)}
+.card-link b{color:var(--action)}
+
+/* ---------- baseline script editor ---------- */
+#scriptRows textarea{
+  font:inherit;width:100%;min-height:110px;padding:10px;border-radius:var(--radius-sm);
+  background:var(--field);color:var(--ink);border:1px solid var(--field-line);resize:vertical;
+}
+
+/* quick bar: fixed, thumb-reachable, always visible while you scroll */
+.qbar{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(10px + env(safe-area-inset-bottom,0px));z-index:50;display:flex;gap:6px;flex-wrap:wrap;justify-content:center;max-width:calc(100vw - 16px);padding:8px;border-radius:22px;background:var(--glass-strong);border:1px solid rgba(255,255,255,.2);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);box-shadow:0 8px 30px rgba(0,0,0,.45)}
+.qbar .q{width:auto;margin:0;padding:9px 12px;border-radius:999px;font-size:.82rem;font-weight:600;color:#fff;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);cursor:pointer;min-height:40px}
+.qbar .q.on{background:linear-gradient(135deg,var(--action),#a06bff);border-color:transparent}
+.qbar .q.off{background:#c0392b;border-color:transparent}
+main{padding-bottom:110px}
+
+/* ---------- moderation: script-change confirm + held-for-approval queue ---------- */
+.confirm-box{margin-top:10px;padding:10px 12px;border-radius:var(--radius-sm);
+  background:rgba(255,180,60,.10);border:1px solid rgba(255,180,60,.35)}
+.confirm-box pre{white-space:pre-wrap;word-break:break-word;max-height:180px;overflow:auto;
+  font-size:.85rem;background:var(--field);border:1px solid var(--field-line);border-radius:var(--radius-sm);padding:8px}
+.pending-row{display:flex;flex-direction:column;gap:4px;padding:8px 10px;margin:6px 0;
+  border-radius:var(--radius-sm);background:var(--field);border:1px solid var(--field-line)}
+.pending-row input{font:inherit;width:100%;padding:6px 8px;border-radius:8px;
+  background:var(--glass);color:var(--ink);border:1px solid var(--field-line)}
+.pending-row .row{gap:6px}
+#pendingList:empty::after{content:'—';color:var(--muted,#888)}
+.msg.silent{opacity:.7;font-style:italic}
+
+/* ── DOM speech bubble (view.html only) ─────────────────────────────
+   Positioned at the top of the avatar canvas, above the character's
+   mouth area. Visibility toggled by JS (.visible class).
+   publish.html draws the bubble directly onto the broadcast canvas
+   instead (04-render.js + 12-speech-bubble.js), so this CSS only
+   applies inside .avatar-stage which is the view.html wrapper.        */
+.avatar-stage{position:relative}
+#viewSpeechBubble{
+  position:absolute;
+  left:0;top:0;                              /* placed per frame from the character's mouth (view.html startDomBubbleLoop) */
+  --rise:0px;--tail-x:50%;
+  transform:translateY(var(--rise));
+  width:max-content;
+  max-width:min(320px, 82%);
+  pointer-events:none;
+  opacity:0;
+  background:linear-gradient(180deg,rgba(24,27,44,.86),rgba(12,14,24,.90));
+  -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+  border:1px solid rgba(255,255,255,.16);
+  border-radius:16px;
+  padding:9px 14px 10px;
+  font-size:15px;
+  line-height:1.45;
+  letter-spacing:.005em;
+  font-weight:600;
+  color:#f4f6ff;
+  overflow-wrap:anywhere;
+  box-shadow:0 10px 30px rgba(0,0,0,.45),0 0 0 1px rgba(124,156,255,.10),inset 0 1px 0 rgba(255,255,255,.08);
+  text-align:start;
+  z-index:4;
+  will-change:opacity,transform,left,top;
+}
+/* soft tail toward the mouth */
+#viewSpeechBubble::after{
+  content:'';position:absolute;top:100%;left:var(--tail-x);transform:translateX(-50%);
+  border:9px solid transparent;border-top-color:rgba(12,14,24,.90);border-bottom:0;
+  filter:drop-shadow(0 3px 3px rgba(0,0,0,.35));pointer-events:none;
+}
+#viewSpeechBubble.below::after{top:auto;bottom:100%;border-top:0;border-bottom:9px solid rgba(12,14,24,.90)}
+#viewSpeechBubble .sb-rest{visibility:hidden}          /* not typed yet: keeps its space, so the bubble never resizes or reflows */
+#viewSpeechBubble .sb-tail{color:#dfe6ff}
+#viewSpeechBubble .sb-caret{display:inline-block;width:2px;height:1.05em;margin:0 1px;vertical-align:-.16em;border-radius:2px;
+  background:#ffe066;box-shadow:0 0 8px rgba(255,224,102,.7);animation:sbcaret 1s ease-in-out infinite}
+@keyframes sbcaret{0%,100%{opacity:.15}50%{opacity:.9}}
+
+
+
+/* ── walk pad (publish): on-screen movement keys under the stage ── */
+.walkpad{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:8px 12px;margin:10px 0 0;background:var(--glass-strong);border:1px solid var(--line);border-radius:var(--radius)}
+.walkpad[hidden]{display:none}
+.walkpad-grid{display:grid;grid-template-columns:repeat(3,52px);gap:6px}
+.walkpad-group{display:flex;flex-direction:column;gap:4px;align-items:center}
+.walkpad-title{font-size:.68rem;opacity:.6;letter-spacing:.06em}
+.walkpad-grid button{font-size:1.05rem;padding:6px 0}
+.walkpad-side{display:flex;flex-direction:row;flex-wrap:wrap;gap:6px}
+.walkpad-side button{padding:8px 12px}
+.walkpad button{padding:8px 4px;border-radius:10px;background:var(--glass-soft);border:1px solid var(--field-line);color:var(--ink);font-weight:700;font-size:.8rem;cursor:pointer;width:auto;touch-action:none;user-select:none}
+.walkpad button.down{background:linear-gradient(135deg,var(--action),#a06bff);border-color:transparent;color:#fff}
+.walkpad-speed{display:flex;align-items:center;gap:8px;font-size:.8rem}
+.walkpad-speed input{width:120px}
+.walkpad-hint{font-size:.72rem;opacity:.6}
+
+/* ── publish: stream + walk pad live in ONE left column (.stage-col) so the walk pad always sits directly
+      under the stream and the control sidebar always stays beside it. Before, .walkpad was its own grid
+      item: showing it (3D room selected) took a grid cell and pushed the whole sidebar below the stream. */
+@media (min-width:760px) and (orientation:landscape), (min-width:1050px){
+  main:has(> .sidebar) .stage-col{position:sticky;top:max(12px,env(safe-area-inset-top));align-self:start;min-width:0}
+  main:has(> .sidebar) .stage-col .stage-wrap{position:relative;top:auto}
+  /* leave room for the pad so stream + pad fit the screen together */
+  main:has(> .sidebar) .stage-col:has(#walkPad:not([hidden])) canvas#stage{max-height:calc(100dvh - 24px - 170px)}
+}
+
+/* ── Sketchfab logo: the embed's cube logo/wordmark is hard-wired to the bottom-left corner and can't be
+      turned off on free Sketchfab plans (ui_watermark:0 is plan-gated). So the iframe is made taller than its
+      box and the box (overflow:hidden) clips the bottom strip - the logo and its model-page link are simply
+      outside the visible/clickable area. One knob: --sf-crop. Applies to publish (.stage-wrap) and view (.avatar-stage). */
+.avatar-stage .scene3d,
+.stage-wrap .scene3d{--sf-crop:64px;--sf-crop-top:84px;inset:auto;top:calc(-1 * var(--sf-crop-top));left:0;width:100%;height:calc(100% + var(--sf-crop) + var(--sf-crop-top))}
+/* --sf-crop-top: the embed's title/author bar ("Studio Office Interior... by ...", $ and share buttons) is
+   drawn at the TOP of the iframe on hover/click and can't be disabled on free plans (ui_infos:0 is
+   ignored). Same trick as the logo: the iframe is shifted up by --sf-crop-top and the box clips it, so
+   the bar is outside the visible/clickable area. Raise the number if a sliver still shows. */
+
+/* ── view.html: 3D room selected -> character shrinks and docks to the side so the room stays visible.
+      JS (setScene3D) toggles .is3d on .avatar-stage. Pointer events pass through to the room. */
+.avatar-stage.is3d canvas.avatar{
+  inset:auto;left:auto;right:2%;bottom:0;
+  width:30%;height:58%;
+  object-position:100% 100%;
+  transform:none;pointer-events:none;
+  filter:drop-shadow(0 6px 14px rgba(0,0,0,.55));
+  transition:width .4s ease,height .4s ease,right .4s ease;
+}
+
+/* sidebar background pickers (mirror of the dock's #bgTheme) */
+.bg-mirror-row{display:flex;align-items:center;gap:8px;margin:6px 0}
+.bg-mirror-row label{margin:0;white-space:nowrap}
+.bg-mirror-row select{flex:1;min-width:0}
+
+
+/* ===================================================================================
+   DROPDOWNS (every <select>, both themes)
+   The closed control is themed with the same tokens as every field; the OPEN list is drawn by the browser,
+   so it gets an explicit background/text per theme (color-scheme + option rules). Before this, the open list
+   was white in dark mode with white (invisible) text - see the faded options in the screenshot.
+   =================================================================================== */
+select{
+  -webkit-appearance:none;appearance:none;cursor:pointer;
+  background-image:var(--chev);background-repeat:no-repeat;background-position:right 12px center;background-size:12px 8px;
+  padding-right:34px;text-overflow:ellipsis;
+}
+select:hover:not(:disabled){border-color:var(--action)}
+select:focus-visible{box-shadow:0 0 0 3px color-mix(in srgb, var(--action) 30%, transparent)}
+select option,select optgroup{background-color:var(--opt-bg);color:var(--opt-ink)}
+select option:checked,select option:hover{background:var(--opt-hover) linear-gradient(var(--opt-hover),var(--opt-hover));color:var(--opt-ink)}
+select optgroup{font-weight:700;color:var(--muted)}
+/* dock / quick-bar selects sit on the dark stage glass in BOTH themes, so their closed state stays light-on-dark
+   but the open list still follows the page theme */
+.dock select.dock-select,.qbar select.q{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%23ffffff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;background-size:11px 7px;padding-right:28px}
+input[type=search],input[type=text],input[type=number],textarea{color-scheme:inherit}
+input::placeholder,textarea::placeholder{color:var(--muted);opacity:.85}
+
+/* ===================================================================================
+   OFFICE SCENE PANEL (publish.html sidebar)
+   =================================================================================== */
+details.office-panel{margin:12px 0;padding:0;border:1px solid var(--line);border-radius:var(--radius);
+  background:linear-gradient(180deg,var(--glass-strong),var(--glass));box-shadow:var(--shadow),inset 0 1px 0 rgba(255,255,255,.06);overflow:hidden}
+details.office-panel>summary{cursor:pointer;padding:12px 14px;list-style:none;display:flex;flex-wrap:wrap;gap:6px 10px;align-items:baseline}
+details.office-panel>summary::-webkit-details-marker{display:none}
+details.office-panel>summary::before{content:"▸";color:var(--action);transition:transform var(--dur)}
+details.office-panel[open]>summary::before{transform:rotate(90deg)}
+.office-body{padding:0 12px 12px}
+.office-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:2px 0 10px;flex-wrap:wrap}
+.office-sync{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border-radius:999px;font-size:.76rem;font-weight:600;
+  background:var(--glass-soft);border:1px solid var(--line);color:var(--muted)}
+.office-sync i{width:8px;height:8px;border-radius:50%;background:var(--warn);box-shadow:0 0 0 0 transparent}
+.office-sync[data-state=ready] i{background:var(--ok);box-shadow:0 0 8px var(--ok)}
+.office-sync[data-state=sending] i{background:var(--action);animation:osync .7s infinite}
+.office-sync[data-state=error] i{background:var(--bad)}
+@keyframes osync{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--action) 60%,transparent)}50%{box-shadow:0 0 0 6px transparent}}
+.office-sent{font-size:.72rem;color:var(--muted)}
+.office-tabs{display:flex;gap:4px;padding:4px;border-radius:14px;background:var(--glass-soft);border:1px solid var(--line);margin-bottom:10px;overflow-x:auto;scrollbar-width:none}
+.office-tabs::-webkit-scrollbar{display:none}
+.office-tabs button.otab{flex:1 0 auto;width:auto;padding:8px 12px;border-radius:10px;border:1px solid transparent;background:transparent;
+  color:var(--muted);font-size:.8rem;font-weight:700;white-space:nowrap}
+.office-tabs button.otab em{font-style:normal;opacity:.7;font-weight:600;margin-left:4px}
+.office-tabs button.otab:hover{color:var(--ink);border-color:var(--line)}
+.office-tabs button.otab.active{color:#fff;background:linear-gradient(135deg,var(--action),#a06bff);box-shadow:0 4px 14px rgba(124,156,255,.4)}
+.office-tabs button.otab[hidden]{display:none}
+.office-pane{display:none;animation:opane .18s ease}
+.office-pane.active{display:block}
+@keyframes opane{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.office-tools{display:flex;gap:8px;margin-bottom:8px}
+.office-tools input[type=search],.office-panel input[type=text]{flex:1;min-width:0;padding:9px 12px;border-radius:999px;font-size:.85rem}
+.office-scroll{max-height:340px;overflow-y:auto;padding:2px 4px 2px 2px;scrollbar-width:thin}
+details.ogroup{margin:0 0 6px;border:1px solid var(--line);border-radius:12px;background:var(--glass-soft)}
+details.ogroup>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;padding:8px 10px;font-size:.82rem;font-weight:700}
+details.ogroup>summary::-webkit-details-marker{display:none}
+details.ogroup>summary::before{content:"▸";color:var(--muted);font-size:.7rem;transition:transform var(--dur)}
+details.ogroup[open]>summary::before{transform:rotate(90deg)}
+.ogroup-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ogroup-count{font-size:.7rem;color:var(--muted);font-weight:600}
+.ogroup-btn{width:auto!important;padding:3px 9px!important;border-radius:999px!important;font-size:.68rem!important;font-weight:700}
+.ogroup-chips{display:flex;flex-wrap:wrap;gap:6px;padding:2px 10px 10px}
+.ochip{width:auto!important;padding:6px 11px!important;border-radius:999px!important;font-size:.76rem;font-weight:600;
+  background:var(--glass-soft);color:var(--muted);border:1px solid var(--field-line);
+  transition:background var(--dur),box-shadow var(--dur),color var(--dur),transform .12s}
+.ochip:hover{color:var(--ink);transform:translateY(-1px)}
+.ochip.active{color:#fff;border-color:transparent;background:linear-gradient(135deg,color-mix(in srgb,var(--action) 85%,#000),#8f6bff);
+  box-shadow:0 3px 12px rgba(124,156,255,.35),inset 0 1px 0 rgba(255,255,255,.25)}
+.ochip:not(.active){text-decoration:line-through;text-decoration-color:color-mix(in srgb,var(--muted) 60%,transparent)}
+.ochip.pulse{animation:ochip .5s ease}
+@keyframes ochip{0%{transform:scale(.9)}60%{transform:scale(1.08)}100%{transform:scale(1)}}
+.opreset{display:flex;align-items:center;gap:6px;margin:0 0 6px;padding:6px;border-radius:12px;background:var(--glass-soft);border:1px solid var(--line)}
+.opreset .go{flex:1;text-align:left}
+.opreset button.del{width:auto;padding:6px 10px;border-radius:10px}
+.omat{display:flex;align-items:center;gap:8px;padding:5px 8px;margin:0 0 4px;border-radius:10px;background:var(--glass-soft);border:1px solid var(--line)}
+.omat span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.8rem}
+.omat code{font-size:.68rem;color:var(--muted)}
+.omat input[type=color]{width:34px;height:26px;padding:0;border:1px solid var(--field-line);border-radius:8px;background:none;cursor:pointer}
+.office-empty{font-size:.82rem;color:var(--muted);padding:10px;text-align:center}
+.office-anim-row{display:flex;gap:8px;margin-top:8px}
+.office-anim-row button{flex:1}
+
+
+/* ===================================================================================
+   VIEWER (view.html) on phones: FIXED scene on top, everything else scrolls beneath it.
+   =================================================================================== */
+@media (max-width:759px){
+  body:has(.avatar-stage){padding-top:0}
+  body:has(.avatar-stage) .topbar{padding-top:max(14px,env(safe-area-inset-top));padding-bottom:6px}
+  .stage-wrap:has(.avatar-stage){
+    position:sticky;top:0;z-index:40;
+    box-shadow:0 10px 24px rgba(0,0,0,.45);background:#000;
+  }
+  .avatar-stage{max-height:54dvh}
+  /* room backgrounds: the publisher's 16:9 frame, whole room visible (aspect is set from JS, see syncStageRatio) */
+  body.wide-scene .avatar-stage{max-height:none}
+  /* 3D iframe: fixed 960x540 logical surface scaled to the stage width (--sf-scale set from JS), so framing == publish */
+  .avatar-stage .scene3d{
+    --sf-scale:.4;
+    width:960px;height:calc(540px + 64px + 84px);
+    top:calc(-84px * var(--sf-scale));left:0;
+    transform-origin:0 0;transform:scale(var(--sf-scale));
+  }
+  .avatar-stage.is3d canvas.avatar{width:29%;height:54%}   /* was 34% x 64% */
+  #viewSpeechBubble{font-size:13.5px;max-width:74%}
+  /* sidebar sections scroll under the fixed scene; leave breathing room at the bottom */
+  .sidebar{padding-bottom:calc(24px + env(safe-area-inset-bottom))}
+}
+
+/* free-roam pad (viewers) */
+.vwalk{border-color:color-mix(in srgb,var(--action) 45%,var(--line));
+  background:linear-gradient(180deg,var(--glass-strong),var(--glass));animation:opane .25s ease}
+.vwalk[hidden]{display:none}
+.vwalk-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.vwalk-grid{display:flex;gap:16px;align-items:center;justify-content:center;flex-wrap:wrap}
+.vwalk-dpad{display:grid;grid-template-columns:repeat(3,58px);grid-auto-rows:58px;gap:8px}
+.vwalk-dpad button{padding:0;font-size:1.1rem;border-radius:16px}
+.vwalk-side{display:flex;flex-direction:column;gap:8px}
+.vwalk-row{display:flex;gap:8px}
+.vwalk-row button{flex:1;min-width:84px;padding:12px 10px;border-radius:14px;font-size:.85rem;white-space:nowrap}
+.vwalk button{width:auto;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;
+  background:var(--glass-soft);border:1px solid var(--field-line);box-shadow:0 3px 0 rgba(0,0,0,.25);font-weight:700}
+.vwalk button.down{background:linear-gradient(135deg,var(--action),#a06bff);color:#fff;border-color:transparent;transform:translateY(2px);box-shadow:none}
+.vwalk-speed{display:flex;align-items:center;gap:10px;margin:12px 0 0;font-size:.82rem}
+.vwalk-speed input{flex:1;padding:0}
