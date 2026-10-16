@@ -1,0 +1,2 @@
+# the model itself (kept separate: heavy, and OmniVoice is installed from GitHub first, as the model card says)
+voicetut-tts

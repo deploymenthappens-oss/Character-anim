@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TTS Admin</title>
+<style>
+:root{color-scheme:light dark;--bg:#f6f5f2;--card:#fff;--fg:#1b1c20;--mut:#6b6f7a;--bd:#e3e1db;--ac:#b45309;--acfg:#fff;--ok:#15803d;--warn:#b45309;--bad:#b91c1c;--chip:#f0eee8}
+@media(prefers-color-scheme:dark){:root{--bg:#121316;--card:#1a1c21;--fg:#e9e9ec;--mut:#9a9eaa;--bd:#2b2e36;--ac:#f59e0b;--acfg:#1a1200;--ok:#4ade80;--warn:#fbbf24;--bad:#f87171;--chip:#23262d}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14.5px/1.45 system-ui,-apple-system,"Segoe UI",Tahoma,sans-serif}
+header{position:sticky;top:0;z-index:5;background:var(--card);border-bottom:1px solid var(--bd);display:flex;gap:12px;align-items:center;padding:10px 16px;flex-wrap:wrap}
+header h1{font-size:16px;margin:0;flex:1;min-width:140px}
+nav{display:flex;gap:4px;overflow-x:auto;padding:8px 16px 0;border-bottom:1px solid var(--bd);background:var(--card)}
+nav button{background:none;border:0;border-bottom:2px solid transparent;padding:8px 12px;color:var(--mut);cursor:pointer;font:inherit;white-space:nowrap}
+nav button.on{color:var(--fg);border-color:var(--ac);font-weight:600}
+main{max-width:1100px;margin:0 auto;padding:16px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px 14px}
+.card .k{font-size:12px;color:var(--mut)}.card .v{font-size:22px;font-weight:650;margin-top:2px;overflow-wrap:anywhere}.card .s{font-size:12px;color:var(--mut)}
+.pill{display:inline-block;padding:2px 10px;border-radius:99px;font-size:12px;font-weight:600;background:var(--chip)}
+.pill.ok{color:var(--ok)}.pill.bad{color:var(--bad)}.pill.warn{color:var(--warn)}
+h2{font-size:15px;margin:22px 0 8px}
+table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--bd);border-radius:12px;overflow:hidden}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--bd);vertical-align:top;font-size:13.5px}th{color:var(--mut);font-weight:500;font-size:12px}
+tr:last-child td{border-bottom:0}.scroll{overflow-x:auto}
+button.b,a.b{background:var(--ac);color:var(--acfg);border:0;border-radius:8px;padding:7px 13px;font:inherit;font-weight:600;cursor:pointer;text-decoration:none;display:inline-block}
+button.g{background:var(--chip);color:var(--fg);border:1px solid var(--bd);border-radius:8px;padding:6px 11px;font:inherit;cursor:pointer}
+button:disabled{opacity:.5;cursor:default}
+input,select,textarea{font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--bd);border-radius:8px;padding:7px 9px;max-width:100%}
+textarea{width:100%;min-height:96px}
+label{display:block;font-size:12px;color:var(--mut);margin-bottom:3px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin:8px 0}
+.mut{color:var(--mut)}.err{color:var(--bad)}code,pre{font:12.5px ui-monospace,Consolas,monospace}
+pre{background:var(--chip);padding:10px;border-radius:8px;overflow:auto;max-height:300px}
+#login{max-width:360px;margin:12vh auto;padding:0 16px}
+.hide{display:none!important}
+.set{display:grid;grid-template-columns:minmax(150px,1.2fr) minmax(120px,1fr) 2fr;gap:8px 12px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--bd)}
+.set:last-child{border:0}.set .d{font-size:12px;color:var(--mut)}
+@media(max-width:640px){.set{grid-template-columns:1fr}}
+#toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:8px 16px;border-radius:99px;font-size:13px;opacity:0;transition:.2s;pointer-events:none;max-width:90vw}
+#toast.show{opacity:1}
+#logbox{background:var(--card);border:1px solid var(--bd);border-radius:12px;height:62vh;min-height:260px;overflow:auto;font:12.5px/1.5 ui-monospace,Consolas,monospace}
+.lg{display:flex;gap:8px;padding:2px 10px;border-bottom:1px solid var(--bd);align-items:baseline}.lg:last-child{border:0}
+.lg .t{color:var(--mut);white-space:nowrap}.lg .s{min-width:34px;font-weight:600}.lg .s.tts{color:var(--ac)}.lg .s.node{color:var(--ok)}
+.lg .m{white-space:pre-wrap;overflow-wrap:anywhere;flex:1}.lg.warn .m{color:var(--warn)}.lg.error .m{color:var(--bad)}.lg.debug .m{color:var(--mut)}
+</style>
+</head>
+<body>
+
+<div id="login" class="hide">
+  <div class="card">
+    <h1 style="font-size:18px;margin:0 0 4px">TTS admin</h1>
+    <p class="mut" style="margin:0 0 12px">Enter the admin token configured on the server.</p>
+    <label for="tok">Admin token</label>
+    <input id="tok" type="password" autocomplete="current-password" style="width:100%">
+    <div class="row"><button class="b" id="loginBtn">Sign in</button><span id="loginErr" class="err"></span></div>
+  </div>
+</div>
+
+<div id="app" class="hide">
+  <header>
+    <h1>Egyptian TTS · admin</h1>
+    <span id="health" class="pill">…</span>
+    <a class="b" href="/admin/docs" target="_blank" rel="noopener">API docs</a>
+    <button class="g" id="logout">Sign out</button>
+  </header>
+  <nav id="tabs"></nav>
+  <main id="main"></main>
+</div>
+<div id="toast"></div>
+
+<script>
+"use strict";
+const $ = (s, r = document) => r.querySelector(s);
+const el = (t, a = {}, ...kids) => { const e = document.createElement(t); for (const [k, v] of Object.entries(a)) { if (k === 'class') e.className = v; else if (k.startsWith('on')) e.addEventListener(k.slice(2), v); else if (v !== false && v != null) e.setAttribute(k, v === true ? '' : v); } for (const c of kids.flat()) e.append(c instanceof Node ? c : document.createTextNode(c ?? '')); return e; };
+const fmt = (n, d = 0) => n == null ? '–' : Number(n).toLocaleString(undefined, { maximumFractionDigits: d });
+const ago = t => { const s = Math.max(0, Math.round(Date.now() / 1000 - t)); return s < 60 ? s + 's' : s < 3600 ? Math.floor(s / 60) + 'm' : Math.floor(s / 3600) + 'h'; };
+let toastT; const toast = (m, bad) => { const t = $('#toast'); t.textContent = m; t.style.background = bad ? 'var(--bad)' : ''; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2600); };
+
+async function api(method, path, body, raw) {
+  const r = await fetch('/admin/api' + path, { method, credentials: 'same-origin', headers: { 'X-Requested-With': 'egy-admin', ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) }, body: body !== undefined ? JSON.stringify(body) : undefined });
+  if (r.status === 401) { showLogin(); throw new Error('signed out'); }
+  if (raw) return r;
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || (j.errors && Object.entries(j.errors).map(([k, v]) => k + ': ' + v).join('; ')) || r.status);
+  return j;
+}
+const act = async (fn, ok) => { try { const r = await fn(); if (ok) toast(ok); tick(); return r; } catch (e) { toast(e.message, true); } };
+
+// ---------------------------------------------------------------- login
+function showLogin(msg) { stop(); $('#app').classList.add('hide'); $('#login').classList.remove('hide'); $('#loginErr').textContent = msg || ''; $('#tok').focus(); }
+async function doLogin() {
+  const r = await fetch('/admin/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: $('#tok').value }) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { $('#loginErr').textContent = j.error || 'failed'; return; }
+  $('#tok').value = ''; start();
+}
+$('#loginBtn').onclick = doLogin; $('#tok').onkeydown = e => { if (e.key === 'Enter') doLogin(); };
+$('#logout').onclick = async () => { await fetch('/admin/api/logout', { method: 'POST' }); showLogin(); };
+
+// ---------------------------------------------------------------- tabs
+const TABS = ['Overview', 'Engines', 'Settings', 'Test', 'Cache', 'Activity', 'Logs', 'Stream', 'Voices', 'API'];
+let tab = 'Overview', timer = null, S = null;
+function buildTabs() { const n = $('#tabs'); n.replaceChildren(...TABS.map(t => el('button', { class: t === tab ? 'on' : '', onclick: () => { tab = t; buildTabs(); render(true); } }, t === 'Stream' ? 'Stream (view/publish)' : t))); }
+function stop() { clearInterval(timer); timer = null; }
+function start() { $('#login').classList.add('hide'); $('#app').classList.remove('hide'); buildTabs(); tick(); stop(); timer = setInterval(() => { if (!document.hidden) tick(); }, 3000); }
+async function tick() { try { S = await api('GET', '/status'); header(); render(false); } catch (e) { if (e.message !== 'signed out') toast(e.message, true); } }
+
+function header() {
+  const h = $('#health'), vt = S.voicetut, any = S.engines.some(e => e.enabled && e.available);
+  const pre = S.engines.find(e => e.enabled);
+  let txt = 'ready', cls = 'ok';
+  if (!any) { txt = 'no engine'; cls = 'bad'; }
+  else if (pre && pre.name === 'voicetut' && vt && !vt.loaded) { txt = vt.error ? 'model failed · fallback' : 'model loading…'; cls = vt.error ? 'bad' : 'warn'; }
+  h.textContent = txt; h.className = 'pill ' + cls;
+}
+
+// ---------------------------------------------------------------- render (rebuild only when needed so forms keep focus)
+const sig = {};
+function render(force) {
+  const m = $('#main');
+  if (!force && ['Settings', 'Test', 'Cache', 'Activity', 'Logs', 'Stream', 'Voices', 'API'].includes(tab)) return;   // forms are static; they refresh on tab switch
+  const v = VIEWS[tab]; if (!v) return;
+  const next = v(); m.replaceChildren(...[].concat(next));
+  if (force && VIEWS_INIT[tab]) VIEWS_INIT[tab]();
+}
+const card = (k, v, s) => el('div', { class: 'card' }, el('div', { class: 'k' }, k), el('div', { class: 'v' }, v), s ? el('div', { class: 's' }, s) : null);
+const pill = (t, c) => el('span', { class: 'pill ' + (c || '') }, t);
+const sec = (t, ...c) => [el('h2', {}, t), ...c];
+const tbl = (head, rows) => el('div', { class: 'scroll' }, el('table', {}, el('thead', {}, el('tr', {}, head.map(h => el('th', {}, h)))), el('tbody', {}, rows.map(r => el('tr', {}, r.map(c => el('td', {}, c)))))));
+
+const VIEWS = {
+  Overview() {
+    const t = S.totals, c = S.cache, y = S.system, vt = S.voicetut;
+    const mem = y.mem_limit_mb ? `${fmt(y.mem_used_mb)} / ${fmt(y.mem_limit_mb)} MB` : (y.rss_mb ? fmt(y.rss_mb) + ' MB' : '–');
+    return [
+      el('div', { class: 'grid' },
+        card('Uptime', fmt(S.uptime_s / 60) + ' min', S.busy ? 'working now' : 'idle ' + S.idle_s + 's'),
+        card('Model', vt ? (vt.loaded ? 'loaded' : vt.error ? 'failed' : 'loading') : 'not in use', vt ? (vt.device || '') + (vt.load_seconds ? ' · ' + vt.load_seconds + 's to load' : '') + (vt.error ? ' · ' + vt.error : '') : ''),
+        card('Requests', fmt(t.requests), fmt(t.errors) + ' failed'),
+        card('Real-time factor', t.rtf == null ? '–' : t.rtf, 'lower is faster; <1 = faster than real time'),
+        card('Cache hit rate', c.hit_rate == null ? '–' : Math.round(c.hit_rate * 100) + '%', fmt(c.mem_items) + ' items · ' + c.mem_mb + ' MB'),
+        card('Audio served', fmt(t.audio_s / 60, 1) + ' min', fmt(t.chars) + ' characters'),
+        card('Memory', mem, y.cpus + ' CPUs' + (y.load ? ' · load ' + y.load.join(' ') : '')),
+        card('Disk', y.disk_free_mb != null ? fmt(y.disk_free_mb / 1024, 1) + ' GB free' : '–', 'cache on disk ' + (y.cache_disk_mb ?? '–') + ' MB')),
+      ...sec('Engines (priority order)', tbl(['#', 'Engine', 'State', 'OK', 'Fail', 'Timeout', 'RTF', 'Last error'],
+        S.engines.map((e, i) => [i + 1, e.name, e.enabled ? (e.cooling ? pill('cooling', 'warn') : e.available ? pill('active', 'ok') : pill('unavailable', 'bad')) : pill('disabled'), e.ok, e.fail, e.timeout, e.rtf ?? '–', el('span', { class: 'mut' }, e.last_error || '')]))),
+    ];
+  },
+  Engines() {
+    return [...sec('Priority order: the first enabled engine is tried first, the rest are fallbacks',
+      ...S.engines.map((e, i) => el('div', { class: 'card', style: 'margin-bottom:10px' },
+        el('div', { class: 'row', style: 'margin:0' },
+          el('b', { style: 'flex:1;font-size:16px' }, (i + 1) + '. ' + e.name), e.enabled ? (e.available ? pill(e.cooling ? 'cooling' : 'active', e.cooling ? 'warn' : 'ok') : pill('unavailable', 'bad')) : pill('disabled'),
+          el('button', { class: 'g', disabled: i === 0, onclick: () => move(i, -1) }, '↑'), el('button', { class: 'g', disabled: i === S.engines.length - 1, onclick: () => move(i, 1) }, '↓'),
+          el('button', { class: 'g', onclick: () => act(() => api('POST', `/engines/${e.name}/${e.enabled ? 'disable' : 'enable'}`), e.name + (e.enabled ? ' disabled' : ' enabled')) }, e.enabled ? 'Disable' : 'Enable'),
+          el('button', { class: 'g', onclick: () => act(() => api('POST', `/engines/${e.name}/reset`), 'breaker reset') }, 'Reset breaker'),
+          e.name === 'voicetut' ? el('button', { class: 'g', onclick: () => confirm('Drop and reload the model?') && act(() => api('POST', '/engines/voicetut/reload'), 'reloading model') }, 'Reload model') : null),
+        el('div', { class: 'mut', style: 'margin-top:6px' }, `ok ${e.ok} · fail ${e.fail} · timeout ${e.timeout} · skipped (busy) ${e.skipped_busy} · pending ${e.pending} · audio ${fmt(e.audio_s)}s · RTF ${e.rtf ?? '–'}`),
+        e.name === 'voicetut' ? el('div', { class: 'mut' }, `device ${e.device} · repo ${e.repo} · steps ${e.num_step} · ${e.loaded ? 'loaded' : 'not loaded'}${e.load_seconds ? ' in ' + e.load_seconds + 's' : ''}`) : null,
+        e.last_error ? el('div', { class: 'err' }, e.last_error) : null)))];
+  },
+  Settings() { return el('div', { id: 'setbox' }, 'Loading…'); },
+  Test() {
+    return [...sec('Speak a test line through the real pipeline',
+      el('div', { class: 'card' },
+        el('label', {}, 'Text'), el('textarea', { id: 't_text', dir: 'auto' }, 'أهلا بيكم في اللايف، عندنا عرض على الـ iPhone بخمسين في المية'),
+        el('div', { class: 'row' },
+          el('div', {}, el('label', {}, 'Speaker'), el('select', { id: 't_spk' }, el('option', { value: '' }, 'default'))),
+          el('div', {}, el('label', {}, 'Speed'), el('input', { id: 't_speed', type: 'number', step: '0.05', min: '0.5', max: '2', placeholder: 'auto', style: 'width:90px' })),
+          el('div', {}, el('label', {}, 'num_step'), el('input', { id: 't_step', type: 'number', min: '1', max: '128', placeholder: 'auto', style: 'width:90px' })),
+          el('label', { style: 'display:flex;gap:6px;align-items:center;margin:0 0 8px' }, el('input', { id: 't_cache', type: 'checkbox' }), 'use cache'),
+          el('button', { class: 'b', id: 't_go' }, 'Speak'), el('button', { class: 'g', id: 't_prep' }, 'Show prepared text')),
+        el('audio', { id: 't_audio', controls: true, style: 'width:100%;margin-top:6px' }), el('div', { id: 't_info', class: 'mut' }), el('pre', { id: 't_pre', class: 'hide' })))];
+  },
+  Cache() {
+    const c = S.cache;
+    return [...sec('Audio cache', el('div', { class: 'grid' }, card('Hit rate', c.hit_rate == null ? '–' : Math.round(c.hit_rate * 100) + '%', `${c.hits} hits / ${c.misses} misses`), card('In memory', c.mem_items + ' items', c.mem_mb + ' MB'), card('Persistent store', c.store || 'none (memory only)', c.store_error ? 'ERROR: ' + c.store_error : c.store ? (c.store_items ?? '–') + ' items, ' + (c.store_mb ?? '–') + ' MB' : 'set CACHE_DATABASE_URL or mount a volume')),
+      el('div', { class: 'row' }, el('button', { class: 'g', onclick: () => confirm('Clear all cached audio?') && act(() => api('DELETE', '/cache'), 'cache cleared') }, 'Clear cache'), el('button', { class: 'g', onclick: () => act(async () => { const r = await api('POST', '/cache/prewarm'); toast(r.started ? 'pre-render started' : 'already running'); }) }, 'Pre-render phrases now'))),
+      ...sec('Phrases to pre-render (one per line; # = comment). Cached lines cost no CPU on air.',
+        el('textarea', { id: 'phr', dir: 'auto', style: 'min-height:220px' }), el('div', { class: 'row' }, el('button', { class: 'b', id: 'phrSave' }, 'Save list'), el('span', { class: 'mut', id: 'phrInfo' })))];
+  },
+  Activity() { return [...sec('Recent requests', el('div', { id: 'reqs' }, 'Loading…')), ...sec('Events', el('div', { id: 'evts' }, 'Loading…'))]; },
+  Logs() {
+    const opt = (v, t, cur) => el('option', { value: v, selected: v === cur }, t);
+    return [...sec('Logs: TTS service + stream server (Node)',
+      el('div', { class: 'row' },
+        el('div', {}, el('label', {}, 'Service'), el('select', { id: 'lg_svc', onchange: e => { LG.service = e.target.value; lgDraw(true); } }, opt('all', 'Both', LG.service), opt('tts', 'TTS (Python)', LG.service), opt('node', 'Stream (Node)', LG.service))),
+        el('div', {}, el('label', {}, 'Level'), el('select', { id: 'lg_lvl', onchange: e => { LG.level = e.target.value; lgDraw(true); } }, opt('debug', 'debug+', LG.level), opt('info', 'info+', LG.level), opt('warn', 'warnings+', LG.level), opt('error', 'errors', LG.level))),
+        el('div', { style: 'flex:1;min-width:160px' }, el('label', {}, 'Search'), el('input', { id: 'lg_q', type: 'search', placeholder: 'filter text…', value: LG.q, style: 'width:100%', oninput: e => { LG.q = e.target.value; lgDraw(true); } })),
+        el('button', { class: 'g', id: 'lg_pause', onclick: () => { LG.paused = !LG.paused; lgStatus(); if (!LG.paused) lgLoop(); } }, LG.paused ? 'Resume' : 'Pause'),
+        el('button', { class: 'g', onclick: () => { LG.hideBefore = Date.now(); lgDraw(true); } }, 'Clear view'),
+        el('button', { class: 'g', onclick: lgDownload }, 'Download')),
+      el('div', { class: 'mut', id: 'lg_status', style: 'margin-bottom:6px' }),
+      el('div', { id: 'logbox' }))];
+  },
+  Stream() { return el('div', { id: 'strm' }, 'Loading…'); },
+  Voices() { return el('div', { id: 'voices' }, 'Loading…'); },
+  API() {
+    const u = location.origin;
+    return [...sec('Everything here is an API call',
+      el('p', {}, 'Every dashboard action is a documented endpoint. Use the bearer token from scripts, CI or another dashboard.'),
+      el('p', {}, el('a', { class: 'b', href: '/admin/docs', target: '_blank', rel: 'noopener' }, 'Open API docs'), ' ', el('a', { class: 'g', style: 'padding:7px 13px;border:1px solid var(--bd);border-radius:8px;text-decoration:none;color:var(--fg)', href: '/admin/api/openapi.json', target: '_blank', rel: 'noopener' }, 'openapi.json')),
+      el('pre', {}, `export URL=${u}\nexport ADMIN_TOKEN=<this dashboard's token>\n\ncurl -H "Authorization: Bearer $ADMIN_TOKEN" $URL/admin/api/status\ncurl -X PATCH -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' -d '{"NUM_STEP": 8}' $URL/admin/api/settings\ncurl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" $URL/admin/api/engines/voicetut/reload`))];
+  },
+};
+
+// ---------------------------------------------------------------- logs tab (state lives here so lines survive tab switches)
+const LG = { service: 'all', level: 'info', q: '', paused: false, hideBefore: 0, running: false, MAX: 2000,
+  src: { tts: { cursor: 0, boot: null, items: [], err: '' }, node: { cursor: 0, boot: null, items: [], err: '' } } };
+const lgPath = { tts: '/logs', node: '/stream/logs' };
+const LVL = { debug: 10, info: 20, warn: 30, error: 40 };
+const pad = (n, w = 2) => String(n).padStart(w, '0');
+const lgTime = ms => { const d = new Date(ms); return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}`; };
+function lgVisible() {
+  const q = LG.q.trim().toLowerCase(), min = LVL[LG.level] || 0;
+  return ['tts', 'node'].filter(k => LG.service === 'all' || LG.service === k).flatMap(k => LG.src[k].items)
+    .filter(e => e.t >= LG.hideBefore && LVL[e.level] >= min && (!q || e.msg.toLowerCase().includes(q)))
+    .sort((a, b) => a.t - b.t || a.id - b.id);
+}
+function lgStatus() {
+  const s = $('#lg_status'); if (!s) return;
+  const parts = [LG.paused ? 'paused' : 'live (every 2 s)'];
+  for (const [k, name] of [['tts', 'TTS'], ['node', 'Stream']]) parts.push(LG.src[k].err ? name + ': ' + LG.src[k].err : name + ': ' + LG.src[k].items.length + ' lines buffered');
+  s.textContent = parts.join(' · ');
+  s.className = (LG.src.tts.err || LG.src.node.err) ? 'err' : 'mut';
+  const b = $('#lg_pause'); if (b) b.textContent = LG.paused ? 'Resume' : 'Pause';
+}
+function lgDraw(force) {
+  const box = $('#logbox'); if (!box) return;
+  const rows = lgVisible().slice(-500);
+  const stick = force || box.scrollHeight - box.scrollTop - box.clientHeight < 40;       // follow the tail unless the reader scrolled up
+  box.replaceChildren(...(rows.length ? rows.map(e => el('div', { class: 'lg ' + e.level }, el('span', { class: 't' }, lgTime(e.t)), el('span', { class: 's ' + e.src }, e.src), el('span', { class: 'm', dir: 'auto' }, e.msg))) : [el('div', { class: 'lg' }, el('span', { class: 'm mut' }, 'No log lines match.'))]));
+  if (stick) box.scrollTop = box.scrollHeight;
+  lgStatus();
+}
+async function lgFetch(k) {
+  const s = LG.src[k];
+  try {
+    const r = await api('GET', `${lgPath[k]}?since=${s.cursor}&level=debug&limit=500`);
+    if (s.boot !== null && r.boot !== s.boot) { s.items = []; s.cursor = 0; s.boot = r.boot; return lgFetch(k); }   // service restarted: its ids start over
+    s.boot = r.boot; s.err = '';
+    if (r.items.length) { s.items = s.items.concat(r.items).slice(-LG.MAX); s.cursor = r.items[r.items.length - 1].id; } else s.cursor = Math.max(s.cursor, r.next || 0);
+  } catch (e) { if (e.message !== 'signed out') s.err = e.message; }
+}
+async function lgLoop() {
+  if (LG.running) return; LG.running = true;
+  try { while (tab === 'Logs' && !LG.paused) { if (!document.hidden) { await Promise.all([lgFetch('tts'), lgFetch('node')]); lgDraw(false); } await new Promise(r => setTimeout(r, 2000)); } }
+  finally { LG.running = false; }
+}
+function lgDownload() {
+  const txt = lgVisible().map(e => `${new Date(e.t).toISOString()} ${e.src} ${e.level.toUpperCase()} ${e.msg}`).join('\n') + '\n';
+  const a = el('a', { href: URL.createObjectURL(new Blob([txt], { type: 'text/plain' })), download: 'logs-' + new Date().toISOString().replace(/[:.]/g, '-') + '.txt' });
+  document.body.append(a); a.click(); a.remove();
+}
+
+// per-tab data loaders run once when the tab opens
+const VIEWS_INIT = {
+  async Logs() { lgDraw(true); lgLoop(); },
+  async Settings() {
+    const box = $('#setbox'); const st = await api('GET', '/settings'); const inputs = {};
+    box.replaceChildren(el('div', { class: 'card', style: 'padding:0' }, ...Object.entries(st).map(([k, s]) => {
+      let inp;
+      if (s.type === 'bool') inp = el('input', { type: 'checkbox', checked: !!s.value });
+      else if (['int', 'float'].includes(s.type)) inp = el('input', { type: 'number', value: s.value, min: s.min, max: s.max, step: s.type === 'int' ? 1 : 'any', style: 'width:100%' });
+      else inp = el('input', { type: 'text', value: s.value, style: 'width:100%' });
+      inputs[k] = { inp, s };
+      return el('div', { class: 'set' }, el('div', {}, el('code', {}, k), ' ', s.overridden ? pill('changed', 'warn') : null, el('div', { class: 'd' }, 'default: ' + String(s.default))), inp, el('div', { class: 'd' }, s.description + (s.min != null ? ` (${s.min}–${s.max})` : '')));
+    })), el('div', { class: 'row' },
+      el('button', { class: 'b', onclick: () => act(async () => {
+        const patch = {}; for (const [k, { inp, s }] of Object.entries(inputs)) { const v = s.type === 'bool' ? inp.checked : inp.value; if (String(v) !== String(s.value)) patch[k] = v; }
+        if (!Object.keys(patch).length) return toast('nothing changed'); await api('PATCH', '/settings', patch); toast('saved'); VIEWS_INIT.Settings();
+      }) }, 'Save changes'),
+      el('button', { class: 'g', onclick: () => confirm('Reset every setting to its environment default?') && act(async () => { await api('POST', '/settings/reset'); toast('reset'); VIEWS_INIT.Settings(); }) }, 'Reset to defaults'),
+      el('span', { class: 'mut' }, 'Applied immediately, remembered across restarts (SETTINGS_FILE).')));
+  },
+  async Test() {
+    try { const sp = await api('GET', '/speakers'); $('#t_spk').append(...sp.map(s => el('option', { value: s.name }, s.name + (s.gender ? ' · ' + s.gender : '')))); } catch (e) { }
+    const body = () => { const b = { text: $('#t_text').value, cache: $('#t_cache').checked }; if ($('#t_spk').value) b.speaker = $('#t_spk').value; if ($('#t_speed').value) b.speed = +$('#t_speed').value; if ($('#t_step').value) b.num_step = +$('#t_step').value; return b; };
+    $('#t_go').onclick = async () => {
+      const btn = $('#t_go'); btn.disabled = true; $('#t_info').textContent = 'generating…'; const t0 = performance.now();
+      try {
+        const r = await api('POST', '/test', body(), true);
+        if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || r.status); }
+        const blob = await r.blob(), dur = +r.headers.get('X-Duration-Ms') / 1000, took = (performance.now() - t0) / 1000;
+        $('#t_audio').src = URL.createObjectURL(blob); $('#t_audio').play().catch(() => { });
+        $('#t_info').textContent = `engine ${r.headers.get('X-Engine')} · ${took.toFixed(1)}s for ${dur.toFixed(1)}s audio (RTF ${(took / dur).toFixed(2)}) · cache ${r.headers.get('X-Cache-Hits')} · spoken: ${decodeURIComponent(r.headers.get('X-Spoken') || '')}`;
+      } catch (e) { $('#t_info').textContent = ''; toast(e.message, true); } finally { btn.disabled = false; }
+    };
+    $('#t_prep').onclick = async () => { const p = $('#t_pre'); try { p.textContent = JSON.stringify(await api('POST', '/prep', { text: $('#t_text').value }), null, 1); } catch (e) { p.textContent = e.message; } p.classList.remove('hide'); };
+  },
+  async Cache() {
+    const r = await api('GET', '/phrases'); $('#phr').value = r.text; $('#phrInfo').textContent = 'stored at ' + r.path;
+    $('#phrSave').onclick = () => act(async () => { const j = await api('PUT', '/phrases', { text: $('#phr').value }); toast(j.lines + ' phrases saved'); });
+  },
+  async Activity() {
+    const load = async () => {
+      if (tab !== 'Activity') return;
+      try {
+        const [q, ev] = await Promise.all([api('GET', '/requests?limit=60'), api('GET', '/events')]);
+        $('#reqs')?.replaceChildren(tbl(['When', 'Text', 'Voice', 'Engine', 'Cache', 'Took', 'Audio', ''], q.map(x => [ago(x.t) + ' ago', el('span', { dir: 'auto' }, x.text || (x.chars + ' chars')), x.speaker || '', (x.engines || []).join(','), x.cache || '', x.took_ms + ' ms', x.audio_ms ? (x.audio_ms / 1000).toFixed(1) + 's' : '', x.ok ? pill('ok', 'ok') : el('span', { class: 'err' }, x.error)])));
+        $('#evts')?.replaceChildren(tbl(['When', 'Kind', 'Message'], ev.map(x => [ago(x.t) + ' ago', x.kind, x.msg])));
+      } catch (e) { }
+      if (tab === 'Activity') setTimeout(load, 3000);
+    };
+    load();
+  },
+  async Stream() {
+    const box = $('#strm'); let v;
+    try { v = await api('GET', '/stream/voices'); } catch (e) { box.replaceChildren(el('div', { class: 'card' }, el('b', {}, 'Stream server not reachable'), el('p', { class: 'mut' }, e.message + '. Set STREAM_URL and STREAM_ADMIN_TOKEN on this service (the stream server\'s own URL and ADMIN_TOKEN).'))); return; }
+    const cur = v.current || {}, sp = (v.voicetut && v.voicetut.speakers) || [];
+    const sel = el('select', {}, el('option', { value: '' }, '(keep)'), ...sp.map(s => el('option', { value: s.name, selected: s.name === cur.vt }, s.name)));
+    const out = el('pre', { class: 'hide' });
+    box.replaceChildren(
+      el('div', { class: 'grid' }, card('Voice engine', v.engine || '–'), card('VoiceTut speaker', cur.vt || '–'), card('Voice service', v.voicetut ? (v.voicetut.up ? 'up' : 'down') : 'not set', v.voicetut && v.voicetut.lastError ? v.voicetut.lastError : ''), card('Last RTF seen by Node', v.voicetut ? (v.voicetut.lastRtf ?? '–') : '–')),
+      ...sec('Live voice on the stream (publish and view follow immediately)', el('div', { class: 'row' }, el('div', {}, el('label', {}, 'VoiceTut speaker'), sel), el('button', { class: 'b', onclick: () => act(async () => { if (!sel.value) return toast('pick a speaker'); await api('POST', '/stream/voice', { vt: sel.value }); VIEWS_INIT.Stream(); }, 'voice changed') }, 'Apply'))),
+      ...sec('Talking control', el('div', { class: 'row' },
+        el('button', { class: 'g', onclick: () => act(() => api('POST', '/stream/speech/pause'), 'speech paused') }, 'Pause speech'), el('button', { class: 'g', onclick: () => act(() => api('POST', '/stream/speech/resume'), 'speech resumed') }, 'Resume speech'),
+        el('button', { class: 'g', onclick: async () => { out.classList.remove('hide'); out.textContent = 'running a real generation through the stream server…'; try { out.textContent = JSON.stringify(await api('GET', '/stream/selftest'), null, 1); } catch (e) { out.textContent = e.message; } } }, 'Self-test'),
+        el('button', { class: 'g', onclick: async () => { out.classList.remove('hide'); try { out.textContent = JSON.stringify(await api('GET', '/stream/state'), null, 1); } catch (e) { out.textContent = e.message; } } }, 'Show stream state')), out));
+  },
+  async Voices() {
+    const box = $('#voices'); let sp = [], refs = [];
+    try { sp = await api('GET', '/speakers'); } catch (e) { }
+    try { refs = await api('GET', '/refs'); } catch (e) { }
+    box.replaceChildren(...sec('Speakers', sp.length ? tbl(['Name', 'Gender', 'Tags'], sp.map(s => [s.name, s.gender || '', (s.tags || []).join(', ')])) : el('p', { class: 'mut' }, 'VoiceTut is disabled, so there are no speakers and every line is spoken by Edge. Open the Logs tab and look for the boot / warning line that says why; enable it on the Engines tab (needs about 4 GB of RAM).')),
+      ...sec('Voice-clone references (needs the speaker\'s consent)', refs.length ? tbl(['Id', 'Text', 'Size', 'Age', ''], refs.map(r => [el('code', {}, r.id.slice(0, 12) + '…'), el('span', { dir: 'auto' }, r.text), r.kb + ' KB', r.age_h + ' h', el('button', { class: 'g', onclick: () => confirm('Delete this reference?') && act(async () => { await api('DELETE', '/refs/' + r.id); VIEWS_INIT.Voices(); }, 'deleted') }, 'Delete')])) : el('p', { class: 'mut' }, 'No references stored.')));
+  },
+};
+
+async function move(i, d) { const o = S.engines.map(e => e.name); [o[i], o[i + d]] = [o[i + d], o[i]]; await act(() => api('PUT', '/engines/order', { order: o }), 'order saved'); }
+
+// ---------------------------------------------------------------- boot
+(async () => {
+  try {
+    const p = await (await fetch('/admin/api/probe')).json();
+    if (!p.enabled) { document.body.replaceChildren(el('div', { id: 'login' }, el('div', { class: 'card' }, el('h1', { style: 'font-size:18px' }, 'Admin is disabled'), el('p', { class: 'mut' }, 'Set the ' + (p.token_var || 'ADMIN_TOKEN') + ' environment variable on this service (for example: openssl rand -hex 32), redeploy, then reload this page.')))); return; }
+    p.authenticated ? start() : showLogin();
+  } catch (e) { showLogin('cannot reach the service'); }
+})();
+</script>
+</body>
+</html>

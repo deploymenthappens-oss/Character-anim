@@ -1,0 +1,9 @@
+# Keep Linux line endings for files that run inside the Docker container (Windows git would otherwise turn them into CRLF
+# and "/app/start.sh" would fail with "bad interpreter").
+*.sh   text eol=lf
+Dockerfile text eol=lf
+*.py   text eol=lf
+*.js   text eol=lf
+*.wav  binary
+*.riv  binary
+*.wasm binary

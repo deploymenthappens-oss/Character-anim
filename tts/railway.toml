@@ -1,0 +1,9 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile.cpu"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 300        # the model takes a while to load on first boot (downloads weights)
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5

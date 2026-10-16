@@ -1,0 +1,7 @@
+__pycache__
+*.pyc
+tests
+notebooks
+tools
+data
+.git

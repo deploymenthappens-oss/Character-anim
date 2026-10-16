@@ -1,0 +1,18 @@
+# CPU-only image for Railway (or any Docker host). No CUDA anywhere.
+FROM python:3.11-slim
+RUN apt-get update && apt-get install -y --no-install-recommends git ffmpeg libsndfile1 espeak-ng build-essential \
+ && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+# 1) CPU wheels of torch first, so nothing later drags in the multi-GB CUDA build
+RUN pip install --no-cache-dir torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+# 2) the model library (OmniVoice is not on PyPI) + our deps
+COPY requirements.txt requirements-model.txt ./
+RUN pip install --no-cache-dir git+https://github.com/k2-fsa/OmniVoice.git \
+ && pip install --no-cache-dir -r requirements.txt -r requirements-model.txt
+COPY egy_tts ./egy_tts
+# model weights + cache live on a mounted volume so a redeploy does not re-download them (Railway: add a Volume at /data)
+ENV HF_HOME=/data/hf CACHE_DIR=/data/audio-cache VOICETUT_REF_DIR=/data/refs PYTHONUNBUFFERED=1 \
+    SETTINGS_FILE=/data/settings.json PHRASES_FILE=/data/phrases.txt \
+    ENGINES=voicetut,edge,espeak VOICETUT_NUM_STEP=auto
+EXPOSE 8000
+CMD ["sh", "-c", "uvicorn egy_tts.server:app --host 0.0.0.0 --port ${PORT:-8000}"]

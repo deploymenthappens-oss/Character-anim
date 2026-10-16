@@ -1,0 +1,19 @@
+# Pre-rendered into the cache at startup (one per line). Add your own recurring lines: acknowledgements, greetings, catchphrases.
+أهلا بيكم في اللايف
+أهلا وسهلا
+ازيكم يا جماعة
+ثواني بس
+حاضر
+تمام
+ماشي
+أيوه
+لأ
+شكراً ليك
+شكراً يا جماعة
+متنسوش تعملوا لايك وشير
+اكتبوا لينا في الشات
+هرد عليك دلوقتي
+سؤال حلو
+معلش، مسمعتش كويس
+في أمان الله
+يلا بينا نبدأ

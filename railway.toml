@@ -1,0 +1,18 @@
+# Railway config-as-code (replaces the old railway.json; keep only ONE of the two files).
+# Values here override the dashboard settings for this service.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+# start.sh launches the built-in Cairo-TTS voice (127.0.0.1:7860) and then the chat/web server
+startCommand = "/app/start.sh"
+# the chat server answers /health immediately, even while the voice model is still loading
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+numReplicas = 1
+sleepApplication = false
+drainingSeconds = 10
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
